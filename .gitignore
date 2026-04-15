@@ -1,0 +1,23 @@
+# Archivos compilados de Maven
+target/
+
+# Archivos de configuración de IDEs
+.idea/
+*.iml
+.vscode/
+*.classpath
+*.project
+*.settings/
+
+# Logs
+*.log
+
+# Variables de entorno
+.env
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Configuración local con credenciales
+backend/backend/src/main/resources/application.properties
