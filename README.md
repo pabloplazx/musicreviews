@@ -37,7 +37,8 @@ MusicReviews_TFG/
     ├── diagrama_bd.png
     ├── diagrama_clases.png
     ├── diagrama_casos_uso.png
-    └── pruebas_postman.md        ← Registro de pruebas y bugs resueltos
+    ├── pruebas_postman.md        ← Registro de pruebas y bugs resueltos
+    └── importacion/              ← Scripts y documentación del proceso de importación desde Spotify
 ```
 
 ---
@@ -75,4 +76,5 @@ La API quedará disponible en `http://localhost:8080`.
 
 - **API REST completa:** `backend/backend/src/main/java/com/musicreviews/backend/README.md`
 - **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
+- **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
 - **Diagramas:** carpeta `docs/`
