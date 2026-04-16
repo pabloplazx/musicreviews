@@ -47,10 +47,11 @@ CREATE TABLE resena (
 );
 
 CREATE TABLE favorito (
+    id             BIGINT PRIMARY KEY AUTO_INCREMENT,
     usuario_id     BIGINT NOT NULL,
     album_id       BIGINT NOT NULL,
-    fecha_añadido  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (usuario_id, album_id),
+    fecha_agregado DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_favorito (usuario_id, album_id),
     FOREIGN KEY (usuario_id) REFERENCES usuario(id),
     FOREIGN KEY (album_id)   REFERENCES album(id)
 );

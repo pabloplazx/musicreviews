@@ -42,7 +42,8 @@ public class ResenaService {
             throw new RuntimeException("El usuario ya ha reseñado este álbum");
         }
 
-        return resenaRepository.save(resena);
+        Resena guardada = resenaRepository.save(resena);
+        return resenaRepository.findById(guardada.getId()).orElse(guardada);
     }
 
     // Esto actualiza la puntuación y el comentario de una reseña existente.
@@ -56,7 +57,8 @@ public class ResenaService {
         resena.setPuntuacion(datosActualizados.getPuntuacion());
         resena.setComentario(datosActualizados.getComentario());
 
-        return resenaRepository.save(resena);
+        resenaRepository.save(resena);
+        return resenaRepository.findById(id).orElse(resena);
     }
 
     // Esto elimina una reseña por su ID. Lanza excepción si no existe.

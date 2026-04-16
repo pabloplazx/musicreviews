@@ -206,6 +206,7 @@ Extiende `JpaRepository<Favorito, Long>`.
 
 | Método | Descripción |
 |---|---|
+| `findByIdConRelaciones(id)` | Carga un favorito por ID con usuario y álbum completos mediante JOIN FETCH (evita el caché de Hibernate) |
 | `findByUsuarioId(usuarioId)` | Obtener todos los favoritos de un usuario |
 | `existsByUsuarioIdAndAlbumId(usuarioId, albumId)` | Comprobar si un álbum ya es favorito del usuario |
 | `deleteByUsuarioIdAndAlbumId(usuarioId, albumId)` | Eliminar un favorito concreto (quitar de favoritos) |
@@ -286,6 +287,8 @@ Cada servicio inyecta su repositorio correspondiente con `@Autowired` y expone m
 | `agregar(favorito)` | Añade un álbum a favoritos. Lanza error si ya estaba añadido |
 | `eliminar(usuarioId, albumId)` | Quita un álbum de favoritos. Lanza error si no estaba. Usa `@Transactional` |
 
+- `@Transactional` en `agregar` es necesario para que `EntityManager.refresh()` pueda recargar la entidad con sus relaciones completas desde la BD después del `save()`.
+- `EntityManager.refresh(guardado)` en `agregar` fuerza la recarga desde la BD, evitando que Spring devuelva la instancia cacheada con campos nulos (problema causado por `open-in-view=true` de Spring Boot).
 - `@Transactional` en `eliminar` es necesario porque `deleteBy...` es una operación de escritura personalizada que JPA necesita dentro de una transacción.
 
 ---

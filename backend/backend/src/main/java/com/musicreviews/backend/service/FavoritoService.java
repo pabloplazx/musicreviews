@@ -2,6 +2,7 @@ package com.musicreviews.backend.service;
 
 import com.musicreviews.backend.model.Favorito;
 import com.musicreviews.backend.repository.FavoritoRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,10 @@ public class FavoritoService {
     @Autowired
     private FavoritoRepository favoritoRepository;
 
+    // Esto permite refrescar entidades desde la BD para obtener los datos completos tras un save.
+    @Autowired
+    private EntityManager entityManager;
+
     // Esto devuelve todos los álbumes marcados como favoritos por un usuario.
     public List<Favorito> obtenerPorUsuario(Long usuarioId) {
         return favoritoRepository.findByUsuarioId(usuarioId);
@@ -28,12 +33,16 @@ public class FavoritoService {
     }
 
     // Esto añade un álbum a favoritos. Antes comprueba que no esté ya en la lista.
+    // Usa @Transactional para que refresh() pueda recargar las relaciones desde la BD.
+    @Transactional
     public Favorito agregar(Favorito favorito) {
         if (favoritoRepository.existsByUsuarioIdAndAlbumId(
                 favorito.getUsuario().getId(), favorito.getAlbum().getId())) {
             throw new RuntimeException("El álbum ya está en favoritos");
         }
-        return favoritoRepository.save(favorito);
+        Favorito guardado = favoritoRepository.save(favorito);
+        entityManager.refresh(guardado);
+        return guardado;
     }
 
     // Esto elimina un favorito concreto. Usa @Transactional porque deleteBy... es una operación

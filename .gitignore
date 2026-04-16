@@ -21,3 +21,6 @@ Thumbs.db
 
 # Configuración local con credenciales
 backend/backend/src/main/resources/application.properties
+
+# Claude Code
+CLAUDE.md

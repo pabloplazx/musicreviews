@@ -36,7 +36,7 @@ public class Resena {
     private int puntuacion;
 
     // Texto de la reseña escrito por el usuario. Puede ser largo, por eso se usa TEXT.
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "contenido", columnDefinition = "TEXT")
     private String comentario;
 
     // Fecha y hora en que se creó la reseña. Se asigna automáticamente en prePersist.
