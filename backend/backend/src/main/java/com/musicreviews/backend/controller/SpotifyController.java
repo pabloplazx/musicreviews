@@ -1,0 +1,56 @@
+package com.musicreviews.backend.controller;
+
+import com.musicreviews.backend.service.SpotifyService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+// Este controlador expone el endpoint para importar artistas y álbumes desde Spotify.
+// Se usa para poblar la base de datos con datos reales antes de arrancar el frontend.
+@RestController
+@RequestMapping("/api/spotify")
+public class SpotifyController {
+
+    // Esto inyecta el servicio de Spotify para delegar en él la lógica de importación.
+    @Autowired
+    private SpotifyService spotifyService;
+
+    // GET /api/spotify/importar?artista=Radiohead
+    // → esto busca el artista en Spotify y guarda en la BD el artista y sus álbumes.
+    // Devuelve un mensaje con el resultado de la importación.
+    @GetMapping("/importar")
+    public ResponseEntity<String> importar(@RequestParam String artista) {
+        try {
+            String resultado = spotifyService.importarArtista(artista);
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al importar: " + e.getMessage());
+        }
+    }
+
+    // GET /api/spotify/importar-playlist?id=4aJVWA1dJA3S4uh0tH0XjT
+    // → esto importa todos los artistas únicos de una playlist pública de Spotify
+    // junto con sus álbumes de estudio. Puede tardar varios minutos si hay muchos artistas.
+    @GetMapping("/importar-playlist")
+    public ResponseEntity<String> importarPlaylist(@RequestParam String id) {
+        try {
+            String resultado = spotifyService.importarDesdePlaylist(id);
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al importar playlist: " + e.getMessage());
+        }
+    }
+
+    // GET /api/spotify/importar-lista
+    // → importa una lista curada de artistas relevantes (favoritos del usuario + clásicos universales).
+    // Puede tardar varios minutos. No requiere parámetros.
+    @GetMapping("/importar-lista")
+    public ResponseEntity<String> importarLista() {
+        try {
+            String resultado = spotifyService.importarLista();
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al importar lista: " + e.getMessage());
+        }
+    }
+}

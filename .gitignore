@@ -24,3 +24,6 @@ backend/backend/src/main/resources/application.properties
 
 # Claude Code
 CLAUDE.md
+
+# Datos de importación (CSV con datos personales de Spotify)
+docs/importacion/*.csv

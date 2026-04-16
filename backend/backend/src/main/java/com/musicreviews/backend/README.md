@@ -363,3 +363,36 @@ Cada método devuelve un `ResponseEntity` para poder controlar el código de est
 | GET | `/api/favoritos/existe?usuarioId=&albumId=` | Comprueba si un álbum es favorito | 200 + true/false |
 | POST | `/api/favoritos` | Añade un álbum a favoritos | 200 o 400 si ya existe |
 | DELETE | `/api/favoritos?usuarioId=&albumId=` | Elimina un álbum de favoritos | 204 o 404 |
+
+---
+
+### SpotifyController ✅
+**Ruta base:** `/api/spotify`
+
+Controlador de uso interno para poblar la base de datos con artistas y álbumes reales desde la API de Spotify. No forma parte del flujo normal de la aplicación — se usa únicamente durante el proceso de importación inicial.
+
+| Método HTTP | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| GET | `/api/spotify/importar?artista=` | Importa un artista concreto y sus álbumes | 200 + mensaje |
+| GET | `/api/spotify/importar-lista` | Importa la lista curada de 108 artistas | 200 + resumen |
+| GET | `/api/spotify/importar-playlist?id=` | Importa artistas desde una playlist pública *(sin soporte desde 2024)* | 200 + resumen |
+
+---
+
+## service/ adicional — SpotifyService ✅
+
+Gestiona la integración con la API de Spotify usando el flujo **Client Credentials** (sin autenticación de usuario). Las credenciales se leen de `application.properties`.
+
+| Método | Descripción |
+|---|---|
+| `importarArtista(nombre)` | Busca un artista por nombre en Spotify e importa su información y álbumes |
+| `importarLista()` | Importa una lista curada de 108 artistas. Comprueba la BD antes de llamar a Spotify para evitar duplicados y rate limiting |
+| `importarDesdePlaylist(playlistId)` | Importa artistas desde una playlist pública *(no funcional desde 2024 por cambio en la API de Spotify)* |
+
+- Usa `WebClient` (Spring WebFlux) para las llamadas HTTP a la API de Spotify
+- Añade un delay de **500ms** entre artistas para no superar el límite de peticiones de Spotify
+- La fecha de lanzamiento de Spotify puede venir en 3 formatos (`1997-05-21`, `1997-05`, `1997`) — el método `parsearFecha` los normaliza todos a `LocalDate`
+- Si un artista ya existe en la BD con álbumes, se salta sin llamar a Spotify
+- Si existe sin álbumes (importación previa interrumpida), reintenta importar sus álbumes
+
+Ver proceso completo de importación en `docs/importacion/proceso_importacion.md`.
