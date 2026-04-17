@@ -79,6 +79,8 @@ El backend expone tres endpoints de importación en `/api/spotify/`:
 | `GET /api/spotify/importar?artista=Radiohead` | Importa un artista concreto por nombre |
 | `GET /api/spotify/importar-lista` | Importa la lista completa de 108 artistas curados |
 | `GET /api/spotify/importar-playlist?id=...` | Importa artistas desde una playlist pública *(requiere OAuth desde 2024)* |
+| `GET /api/spotify/actualizar-metadatos` | Rellena género (Spotify) y biografía (Last.fm) de artistas que los tengan vacíos |
+| `GET /api/spotify/actualizar-portadas` | Busca en Spotify la portada de cada álbum que la tenga vacía y la actualiza |
 
 ### Flujo interno de `importar-lista`
 
@@ -114,9 +116,156 @@ Backend → GET https://api.spotify.com/v1/...
 
 ---
 
+## Paso 5 — Completar metadatos con Last.fm
+
+Después de la importación inicial, muchos artistas tenían el campo `biografia` vacío (Spotify no proporciona biografías). Para rellenarlo se integró la API de **Last.fm**.
+
+### Configuración
+
+1. Crear una cuenta en **last.fm/api** y obtener una API Key
+2. Añadirla a `application.properties`:
+   ```properties
+   lastfm.api-key=TU_API_KEY
+   ```
+
+### Endpoint
+
+```
+GET /api/spotify/actualizar-metadatos
+```
+
+Este endpoint actualiza en un solo paso tanto el género (desde Spotify) como la biografía (desde Last.fm) de todos los artistas que tengan esos campos vacíos. También propaga el género actualizado a los álbumes del artista que no lo tengan.
+
+### Flujo interno
+
+1. Obtiene todos los artistas de la BD
+2. Para cada artista, si no tiene género:
+   - Busca el artista en Spotify (`/v1/search`) con el nombre exacto
+   - Si Spotify devuelve géneros, toma el primero y lo asigna al artista y a sus álbumes sin género
+3. Para cada artista, si no tiene biografía:
+   - Llama a Last.fm: `GET https://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=<nombre>&api_key=<key>&format=json`
+   - Extrae el campo `artist.bio.summary` de la respuesta
+   - Limpia el HTML que Last.fm incluye al final del texto (enlace `<a href...>`)
+   - Guarda la biografía limpia en la BD
+4. Espera 300ms entre cada petición a Spotify y entre cada petición a Last.fm para no superar los límites
+
+### Autenticación con Last.fm
+
+Last.fm usa autenticación por API Key en la query string, sin OAuth ni tokens:
+
+```
+GET https://ws.audioscrobbler.com/2.0/
+    ?method=artist.getinfo
+    &artist=Radiohead
+    &api_key=TU_API_KEY
+    &format=json
+```
+
+No requiere ningún flujo de autenticación previo — la API Key se pasa directamente en cada petición.
+
+### Resultado
+
+- Géneros completados para los artistas que Spotify no había devuelto en la importación inicial
+- Biografías rellenadas para todos los artistas que Last.fm conoce
+- Los artistas muy de nicho o recientes que Last.fm no tiene registrados quedan sin biografía
+
+### Géneros asignados manualmente
+
+La mayoría de artistas de la lista (~90) tenían `genero = NULL` tras la importación, ya que Spotify no devuelve géneros para muchos artistas en su API de búsqueda. Tras ejecutar `actualizar-metadatos` solo se completaron 5 artistas automáticamente.
+
+El resto se completó con un único `UPDATE ... CASE` directamente sobre la BD, asignando géneros conocidos a cada artista por su `id`. También se propagó el género a los álbumes de cada artista que lo tuvieran vacío:
+
+```sql
+UPDATE album a
+JOIN artista ar ON a.artista_id = ar.id
+SET a.genero = ar.genero
+WHERE a.id > 0
+  AND (a.genero IS NULL OR a.genero = '')
+  AND ar.genero IS NOT NULL;
+-- 437 álbumes actualizados
+```
+
+### País asignado manualmente
+
+El campo `pais` no lo rellena ni Spotify ni Last.fm. Los 98 artistas de la base de datos se completaron con un único `UPDATE ... CASE` asignando el país de origen de cada artista por su `id`:
+
+```sql
+UPDATE artista SET pais = CASE id
+    WHEN 9  THEN 'Reino Unido'  -- The Beatles
+    WHEN 8  THEN 'Reino Unido'  -- Radiohead
+    -- ... (98 artistas en total)
+END
+WHERE id IN (...);
+-- 98 artistas actualizados
+```
+
+---
+
+## Paso 6 — Limpieza y corrección de datos
+
+Tras la importación completa se realizó una revisión exhaustiva de la base de datos para detectar y corregir inconsistencias.
+
+### Artistas duplicados
+
+La reimportación de algunos artistas generó duplicados. Se identificaron con:
+
+```sql
+SELECT nombre, COUNT(*) FROM artista GROUP BY nombre HAVING COUNT(*) > 1;
+```
+
+Se conservó el registro con datos reales de Spotify (foto, género) y se eliminaron los duplicados, reasignando previamente sus álbumes al id correcto:
+
+```sql
+UPDATE album SET artista_id = 8 WHERE artista_id IN (1, 32);  -- Radiohead
+UPDATE album SET artista_id = 9 WHERE artista_id = 45;        -- The Beatles
+DELETE FROM artista WHERE id IN (1, 32, 45);
+```
+
+### Álbumes duplicados
+
+Los mismos artistas tenían álbumes duplicados (ids 116-120 y 177-181). Se eliminaron directamente:
+
+```sql
+DELETE FROM album WHERE id IN (116, 117, 118, 119, 120, 177, 178, 179, 180, 181);
+```
+
+### Portadas de álbumes vacías
+
+31 álbumes (principalmente de artistas españoles y Prince) no tenían portada tras la importación. Se añadió el endpoint `GET /api/spotify/actualizar-portadas` que busca cada álbum sin portada en Spotify por `"título artista"` y actualiza la imagen. Actualizó los 31 álbumes correctamente.
+
+### Biografías en idioma incorrecto
+
+Last.fm devolvió algunas biografías en español para artistas españoles y latinos. Se reescribieron manualmente en inglés para mantener consistencia con el resto:
+
+- Bunbury, Fito y Fitipaldis, Carolina Durante, Duki, Eladio Carrion, Canserbero, Leiva, Supersubmarina
+
+Además se corrigieron dos biografías con contenido erróneo que Last.fm había devuelto:
+- **Nirvana**: Last.fm devolvía el texto de desambiguación de la página en lugar de la biografía real.
+- **JAY-Z**: La biografía hacía referencia únicamente al cambio de nombre del artista.
+
+### Query de verificación final
+
+```sql
+SELECT 
+    (SELECT COUNT(*) FROM artista WHERE foto      IS NULL OR foto      = '') AS artistas_sin_foto,
+    (SELECT COUNT(*) FROM artista WHERE genero    IS NULL OR genero    = '') AS artistas_sin_genero,
+    (SELECT COUNT(*) FROM artista WHERE pais      IS NULL OR pais      = '') AS artistas_sin_pais,
+    (SELECT COUNT(*) FROM artista WHERE biografia IS NULL OR biografia = '') AS artistas_sin_biografia,
+    (SELECT COUNT(*) FROM album   WHERE portada   IS NULL OR portada   = '') AS albumes_sin_portada,
+    (SELECT COUNT(*) FROM album   WHERE genero    IS NULL OR genero    = '') AS albumes_sin_genero,
+    (SELECT COUNT(*) FROM album   WHERE artista_id NOT IN (SELECT id FROM artista)) AS albumes_huerfanos,
+    (SELECT COUNT(*) FROM artista a WHERE (SELECT COUNT(*) FROM artista b WHERE b.nombre = a.nombre) > 1) AS artistas_duplicados,
+    (SELECT COUNT(*) FROM album   a WHERE (SELECT COUNT(*) FROM album   b WHERE b.titulo = a.titulo AND b.artista_id = a.artista_id) > 1) AS albumes_duplicados;
+```
+
+Resultado final: todos los campos a 0 excepto `artistas_sin_biografia` = 0.
+
+---
+
 ## Resultado final
 
-- **~95 artistas** importados con sus álbumes de estudio
+- **~98 artistas** importados con sus álbumes de estudio
 - **~440 álbumes** disponibles en la base de datos
-- Datos incluyen: nombre, foto, género (artista) y título, portada, fecha de lanzamiento, género (álbum)
-- Campos pendientes de completar manualmente: biografía del artista, descripción del álbum
+- Datos incluyen: nombre, foto, género, país (artista) y título, portada, fecha de lanzamiento, género (álbum)
+- Biografías de artista completadas vía Last.fm
+- Campos pendientes de completar manualmente: descripción de álbum

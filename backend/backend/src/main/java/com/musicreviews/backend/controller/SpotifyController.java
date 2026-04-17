@@ -53,4 +53,29 @@ public class SpotifyController {
             return ResponseEntity.internalServerError().body("Error al importar lista: " + e.getMessage());
         }
     }
+
+    // GET /api/spotify/actualizar-metadatos
+    // → actualiza el género (Spotify) y la biografía (Last.fm) de todos los artistas
+    // que tengan esos campos vacíos. También actualiza el género de sus álbumes.
+    @GetMapping("/actualizar-metadatos")
+    public ResponseEntity<String> actualizarMetadatos() {
+        try {
+            String resultado = spotifyService.actualizarMetadatos();
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al actualizar metadatos: " + e.getMessage());
+        }
+    }
+
+    // GET /api/spotify/actualizar-portadas
+    // → busca en Spotify la portada de cada álbum que la tenga vacía y la actualiza en la BD.
+    @GetMapping("/actualizar-portadas")
+    public ResponseEntity<String> actualizarPortadas() {
+        try {
+            String resultado = spotifyService.actualizarPortadas();
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al actualizar portadas: " + e.getMessage());
+        }
+    }
 }

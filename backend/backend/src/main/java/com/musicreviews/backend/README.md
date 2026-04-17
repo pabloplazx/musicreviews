@@ -369,30 +369,45 @@ Cada método devuelve un `ResponseEntity` para poder controlar el código de est
 ### SpotifyController ✅
 **Ruta base:** `/api/spotify`
 
-Controlador de uso interno para poblar la base de datos con artistas y álbumes reales desde la API de Spotify. No forma parte del flujo normal de la aplicación — se usa únicamente durante el proceso de importación inicial.
+Controlador de uso interno para poblar la base de datos con artistas y álbumes reales desde la API de Spotify y Last.fm. No forma parte del flujo normal de la aplicación — se usa únicamente durante el proceso de importación y mantenimiento de datos.
 
 | Método HTTP | Ruta | Descripción | Respuesta |
 |---|---|---|---|
-| GET | `/api/spotify/importar?artista=` | Importa un artista concreto y sus álbumes | 200 + mensaje |
-| GET | `/api/spotify/importar-lista` | Importa la lista curada de 108 artistas | 200 + resumen |
-| GET | `/api/spotify/importar-playlist?id=` | Importa artistas desde una playlist pública *(sin soporte desde 2024)* | 200 + resumen |
+| GET | `/api/spotify/importar?artista=` | Importa un artista concreto y sus álbumes desde Spotify | 200 + mensaje |
+| GET | `/api/spotify/importar-lista` | Importa la lista curada de artistas (omite los que ya existen) | 200 + resumen |
+| GET | `/api/spotify/importar-playlist?id=` | Importa artistas desde una playlist pública *(sin soporte desde 2024)* | — |
+| GET | `/api/spotify/actualizar-metadatos` | Rellena género (Spotify) y biografía (Last.fm) de artistas con esos campos vacíos | 200 + resumen |
+| GET | `/api/spotify/actualizar-portadas` | Busca en Spotify la portada de cada álbum que la tenga vacía y la actualiza | 200 + resumen |
 
 ---
 
 ## service/ adicional — SpotifyService ✅
 
-Gestiona la integración con la API de Spotify usando el flujo **Client Credentials** (sin autenticación de usuario). Las credenciales se leen de `application.properties`.
+Gestiona la integración con la API de Spotify (importación) y Last.fm (biografías). Usa el flujo **Client Credentials** de Spotify (sin autenticación de usuario). Las credenciales de ambas APIs se leen de `application.properties`.
 
 | Método | Descripción |
 |---|---|
-| `importarArtista(nombre)` | Busca un artista por nombre en Spotify e importa su información y álbumes |
-| `importarLista()` | Importa una lista curada de 108 artistas. Comprueba la BD antes de llamar a Spotify para evitar duplicados y rate limiting |
-| `importarDesdePlaylist(playlistId)` | Importa artistas desde una playlist pública *(no funcional desde 2024 por cambio en la API de Spotify)* |
+| `importarArtista(nombre)` | Busca un artista por nombre en Spotify e importa su información y álbumes. Si ya existe con álbumes, devuelve mensaje informativo |
+| `importarLista()` | Importa una lista curada de artistas. Comprueba la BD antes de llamar a Spotify para evitar duplicados |
+| `importarDesdePlaylist(playlistId)` | Importa artistas desde una playlist pública *(no funcional desde 2024 — Spotify retiró acceso con Client Credentials)* |
+| `actualizarMetadatos()` | Recorre todos los artistas y rellena género (Spotify) y biografía (Last.fm) si están vacíos. También actualiza el género de sus álbumes |
+| `actualizarPortadas()` | Recorre todos los álbumes sin portada y busca su imagen en Spotify por `"título artista"`. Actualiza los que encuentre |
 
-- Usa `WebClient` (Spring WebFlux) para las llamadas HTTP a la API de Spotify
-- Añade un delay de **500ms** entre artistas para no superar el límite de peticiones de Spotify
+### Manejo de rate limiting
+
+Todas las llamadas a Spotify pasan por el método privado `spotifyGet(Supplier<Map>)`, que implementa reintentos automáticos ante respuestas 429:
+
+- Lee el header `Retry-After` de la respuesta de Spotify para saber exactamente cuántos segundos esperar
+- Reintenta hasta **5 veces** con el tiempo de espera indicado por Spotify + 2 segundos de margen
+- Si se agotan los intentos, lanza excepción con mensaje claro
+
+El método `manejarRateLimit(ClientResponse)` extrae el valor de `Retry-After` y lo codifica en la excepción como `RATE_LIMIT:{segundos}` para que `spotifyGet` pueda leerlo.
+
+### Otros detalles
+
+- La búsqueda de artistas usa `UriBuilder` para codificar correctamente nombres con tildes, comas u otros caracteres especiales (ej: `La Habitación Roja`)
 - La fecha de lanzamiento de Spotify puede venir en 3 formatos (`1997-05-21`, `1997-05`, `1997`) — el método `parsearFecha` los normaliza todos a `LocalDate`
-- Si un artista ya existe en la BD con álbumes, se salta sin llamar a Spotify
-- Si existe sin álbumes (importación previa interrumpida), reintenta importar sus álbumes
+- Las biografías de Last.fm incluyen un enlace HTML al final que se elimina con una expresión regular antes de guardar
+- Si el rate limit de Spotify está activo por uso intensivo previo, esperar 1-2 horas antes de reintentar
 
 Ver proceso completo de importación en `docs/importacion/proceso_importacion.md`.
