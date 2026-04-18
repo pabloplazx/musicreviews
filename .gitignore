@@ -19,8 +19,22 @@ target/
 .DS_Store
 Thumbs.db
 
-# Configuración local con credenciales
+# Configuración local con credenciales (contiene passwords de BD, JWT secret y claves API)
 backend/backend/src/main/resources/application.properties
+
+# Variables de entorno con secretos
+*.env
+.env.local
+.env.production
+
+# Claves y certificados
+*.pem
+*.key
+*.p12
+*.jks
+
+# Uploads de usuarios (se generan en runtime)
+backend/backend/uploads/
 
 # Claude Code
 CLAUDE.md

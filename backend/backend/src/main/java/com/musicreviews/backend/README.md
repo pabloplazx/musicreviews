@@ -41,7 +41,9 @@ com.musicreviews.backend/
 ├── repository/     ← Acceso a la BD (Spring Data JPA)
 ├── service/        ← Lógica de negocio
 ├── controller/     ← Endpoints REST
-└── SecurityConfig  ← Configuración de seguridad (JWT pendiente)
+├── security/       ← JwtUtil, JwtFilter, UserDetailsServiceImpl
+├── dto/            ← RegisterRequest, LoginRequest, AuthResponse
+└── SecurityConfig  ← Configuración de Spring Security + rutas por rol
 ```
 
 ---
@@ -411,3 +413,26 @@ El método `manejarRateLimit(ClientResponse)` extrae el valor de `Retry-After` y
 - Si el rate limit de Spotify está activo por uso intensivo previo, esperar 1-2 horas antes de reintentar
 
 Ver proceso completo de importación en `docs/importacion/proceso_importacion.md`.
+
+---
+
+## Seguridad y Autenticación ✅
+
+Implementada con **Spring Security + JWT (jjwt 0.12.6) + BCrypt**.
+
+### Endpoints públicos
+- `POST /api/auth/register` — registro de usuario (devuelve token JWT)
+- `POST /api/auth/login` — login (devuelve token JWT)
+- `GET /api/artistas/**`, `GET /api/albumes/**`, `GET /api/resenas/**` — consultas sin autenticación
+
+### Uso del token
+Incluir en el header de cada petición protegida:
+```
+Authorization: Bearer <token>
+```
+
+### Roles
+- `USER` — puede crear/editar/borrar sus reseñas y favoritos
+- `ADMIN` — puede además crear/editar/borrar artistas, álbumes e importar desde Spotify
+
+Ver documentación completa en `docs/seguridad_autenticacion.md`.

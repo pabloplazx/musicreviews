@@ -45,6 +45,14 @@ public class Usuario {
     @Enumerated(EnumType.STRING)
     private Rol rol;
 
+    // Indica si la cuenta está activa. Permite desactivar usuarios sin borrarlos.
+    @Column(nullable = false)
+    private boolean activo = true;
+
+    // Fecha y hora del último login. Se actualiza cada vez que el usuario inicia sesión.
+    @Column(name = "fecha_ultimo_login")
+    private LocalDateTime fechaUltimoLogin;
+
     // Antes de guardar por primera vez, esto asigna la fecha de registro y el rol por defecto.
     @PrePersist
     public void prePersist() {

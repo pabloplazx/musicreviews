@@ -9,7 +9,7 @@ Los usuarios pueden buscar álbumes, escribir reseñas con puntuación del 1 al 
 
 | Capa | Tecnología |
 |---|---|
-| Backend | Java 21 + Spring Boot + Maven |
+| Backend | Java 21 + Spring Boot + Maven + Spring Security + JWT |
 | Frontend | React + Vite (en desarrollo) |
 | Base de datos | MySQL en la nube — [Aiven](https://aiven.io) (plan gratuito permanente) |
 
@@ -26,6 +26,8 @@ MusicReviews_TFG/
 │       │   ├── repository/       ← Acceso a la BD (Spring Data JPA)
 │       │   ├── service/          ← Lógica de negocio
 │       │   ├── controller/       ← Endpoints REST
+│       │   ├── security/         ← JWT (JwtUtil, JwtFilter, UserDetailsServiceImpl)
+│       │   ├── dto/              ← Objetos de transferencia (register, login, auth response)
 │       │   ├── SecurityConfig.java
 │       │   └── README.md         ← Documentación completa de la API
 │       └── src/main/resources/
@@ -91,5 +93,6 @@ La API quedará disponible en `http://localhost:8080`.
 - **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
 - **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
 - **Migración de la BD a Aiven:** `docs/migracion_aiven.md`
+- **Seguridad y autenticación JWT:** `docs/seguridad_autenticacion.md`
 - **Referencias de diseño:** `docs/referencias/referencias.md`
 - **Diagramas:** carpeta `docs/`

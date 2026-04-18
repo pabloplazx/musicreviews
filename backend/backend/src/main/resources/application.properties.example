@@ -13,3 +13,10 @@ spring.jpa.properties.hibernate.format_sql=true
 
 # Puerto del servidor
 server.port=8080
+
+# JWT
+# La clave secreta debe tener mínimo 32 caracteres (se usa para firmar los tokens con HMAC-SHA512)
+# Genera una clave segura y no la compartas ni la subas a GitHub
+jwt.secret=TU_CLAVE_SECRETA_MINIMO_32_CARACTERES
+# Tiempo de expiración del token en milisegundos (86400000 = 24 horas)
+jwt.expiration-ms=86400000
