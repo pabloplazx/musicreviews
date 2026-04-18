@@ -107,6 +107,46 @@ Base URL: `http://localhost:8080`
 
 ---
 
+## SpotifyController ✅
+
+Base URL: `http://localhost:8080/api/spotify`
+
+| Método | Ruta | Params | Resultado |
+|---|---|---|---|
+| GET | `/api/spotify/importar` | `?artista=Fangoria` | 200 + `"Importado: Fangoria con 8 álbumes."` ✅ |
+| GET | `/api/spotify/importar` | `?artista=Arctic Monkeys` | 200 + `"Arctic Monkeys ya existe en la base de datos con álbumes importados."` ✅ |
+| GET | `/api/spotify/importar-lista` | — | 200 + resumen con totales ✅ |
+| GET | `/api/spotify/actualizar-metadatos` | — | 200 + `"Metadatos actualizados para N artistas."` ✅ |
+
+### Bugs encontrados y corregidos
+
+**Bug 1 — Nombres con tildes o caracteres especiales no se codifican**
+- **Síntoma:** `La Habitación Roja` no se encontraba en Spotify. La petición HTTP enviaba la `ó` sin codificar.
+- **Causa:** Las URLs de búsqueda se construían con concatenación directa (`"/v1/search?q=" + nombre`), sin codificación de caracteres especiales.
+- **Solución:** Cambiar todas las búsquedas a `UriBuilder` con `.queryParam("q", nombre)`, que codifica automáticamente cualquier carácter especial.
+
+**Bug 2 — Rate limiting (429 Too Many Requests)**
+- **Síntoma:** Spotify devuelve 429 al importar artistas en cadena o al relanzar el endpoint poco después de un uso intensivo.
+- **Causa:** La API de Spotify con Client Credentials tiene un límite de peticiones por ventana de 30 segundos. No se respetaba el header `Retry-After` que Spotify envía indicando cuántos segundos esperar.
+- **Solución:** Implementar el método `spotifyGet(Supplier<Map>)` que envuelve todas las llamadas a Spotify con hasta 5 reintentos automáticos, leyendo el header `Retry-After` para esperar exactamente el tiempo indicado. El método `manejarRateLimit(ClientResponse)` extrae ese valor y lo pasa a `spotifyGet` codificado en el mensaje de excepción (`RATE_LIMIT:{segundos}`).
+- **Nota:** Si se hacen decenas de peticiones en poco tiempo (por ejemplo, pruebas repetidas), el cooldown acumulado puede durar 1-2 horas. En uso normal (importar un artista de vez en cuando), el rate limiting no ocurre.
+
+**Bug 3 — Mensaje confuso al reimportar artista ya existente**
+- **Síntoma:** `GET /importar?artista=Arctic Monkeys` devolvía `"Importado: Arctic Monkeys con 0 álbumes."` cuando ya existía.
+- **Causa:** `importarArtistaPorId` devolvía 0 al detectar duplicado, y el mensaje no distinguía entre "importado con 0 álbumes" y "omitido por ya existir".
+- **Solución:** Añadir comprobación previa en `importarArtista` antes de llamar a `importarArtistaPorId`. Si el artista ya existe con álbumes, se devuelve directamente el mensaje `"X ya existe en la base de datos con álbumes importados."`.
+
+### Integración Last.fm — `actualizar-metadatos`
+
+El endpoint `GET /api/spotify/actualizar-metadatos` combina dos APIs:
+- **Spotify** — para rellenar el campo `genero` del artista y sus álbumes
+- **Last.fm** — para rellenar el campo `biografia` del artista
+
+Solo actualiza los artistas que tengan esos campos vacíos (`NULL`). Los artistas ya completos se saltan.
+Credencial Last.fm almacenada en `application.properties` como `lastfm.api-key`.
+
+---
+
 ## Resumen general
 
 | Controlador | Endpoints probados | Bugs encontrados | Estado |
@@ -116,3 +156,4 @@ Base URL: `http://localhost:8080`
 | UsuarioController | 7 | 0 | ✅ |
 | ResenaController | 8 | 2 | ✅ (corregidos) |
 | FavoritoController | 6 | 3 | ✅ (corregidos) |
+| SpotifyController | 4 | 3 | ✅ (corregidos) |

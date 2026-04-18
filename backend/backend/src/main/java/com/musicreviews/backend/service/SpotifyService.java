@@ -298,7 +298,7 @@ public class SpotifyService {
 
         try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
 
-        Map responseAlbumes = spotifyGet(() -> client.get()
+        21Map responseAlbumes = spotifyGet(() -> client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/v1/artists/{id}/albums")
                         .queryParam("include_groups", "album")

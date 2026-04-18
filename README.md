@@ -11,7 +11,7 @@ Los usuarios pueden buscar álbumes, escribir reseñas con puntuación del 1 al 
 |---|---|
 | Backend | Java 21 + Spring Boot + Maven |
 | Frontend | React + Vite (en desarrollo) |
-| Base de datos | MySQL |
+| Base de datos | MySQL en la nube — [Aiven](https://aiven.io) (plan gratuito permanente) |
 
 ---
 
@@ -49,19 +49,31 @@ MusicReviews_TFG/
 ### Requisitos previos
 - Java 21
 - Maven
-- MySQL
+- Cuenta en [Aiven](https://aiven.io) con un servicio MySQL activo (o MySQL local)
 
 ### 1. Base de datos
-Ejecutar el script en MySQL:
+
+La base de datos está alojada en **Aiven** (MySQL cloud). No es necesario instalar MySQL localmente.
+
+Si quisieras usar MySQL local, puedes ejecutar el script de esquema:
 ```sql
 source database/schema.sql
 ```
 
 ### 2. Configuración
-Copiar el archivo de ejemplo y rellenar con tus credenciales:
+Copiar el archivo de ejemplo y rellenar con tus credenciales de Aiven:
 ```
 backend/backend/src/main/resources/application.properties.example → application.properties
 ```
+
+Configuración para Aiven:
+```properties
+spring.datasource.url=jdbc:mysql://<host>:<port>/defaultdb?useSSL=true&requireSSL=true
+spring.datasource.username=avnadmin
+spring.datasource.password=TU_PASSWORD_AIVEN
+```
+
+Los datos de conexión (host, port, password) se encuentran en el panel de Aiven → tu servicio MySQL → pestaña **Connection information**.
 
 ### 3. Arrancar el backend
 ```bash

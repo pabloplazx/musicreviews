@@ -1,7 +1,7 @@
 # MusicReviews - Backend
 
 API REST desarrollada con **Java 21 + Spring Boot 3.4.4 + Maven**.
-Base de datos: **MySQL** (BD: `musicreviews`, usuario: `root`, pass: `1234`, puerto: `8080`).
+Base de datos: **MySQL en la nube via [Aiven](https://aiven.io)** — BD: `defaultdb`, usuario: `avnadmin`. Las credenciales de conexión se configuran en `application.properties` (no incluido en el repositorio).
 
 ---
 

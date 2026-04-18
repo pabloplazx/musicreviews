@@ -1,7 +1,8 @@
-# Base de datos
-spring.datasource.url=jdbc:mysql://localhost:3306/musicreviews
-spring.datasource.username=TU_USUARIO
-spring.datasource.password=TU_PASSWORD
+# Base de datos (Aiven - MySQL cloud)
+# Los datos de conexión se encuentran en el panel de Aiven → tu servicio MySQL → Connection information
+spring.datasource.url=jdbc:mysql://<AIVEN_HOST>:<AIVEN_PORT>/defaultdb?useSSL=true&requireSSL=true
+spring.datasource.username=avnadmin
+spring.datasource.password=TU_PASSWORD_AIVEN
 spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 
 # JPA / Hibernate
