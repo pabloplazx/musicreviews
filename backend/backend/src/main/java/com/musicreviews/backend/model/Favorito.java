@@ -20,13 +20,13 @@ public class Favorito {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Esto representa la relación con el usuario que ha marcado el álbum como favorito.
-    @ManyToOne
+    // LAZY: el usuario solo se carga cuando se accede al campo, no al cargar el favorito.
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usuario_id", nullable = false)
     private Usuario usuario;
 
-    // Esto representa la relación con el álbum que el usuario ha marcado como favorito.
-    @ManyToOne
+    // LAZY: el álbum solo se carga cuando se accede al campo, no al cargar el favorito.
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "album_id", nullable = false)
     private Album album;
 

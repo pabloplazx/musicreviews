@@ -94,5 +94,6 @@ La API quedará disponible en `http://localhost:8080`.
 - **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
 - **Migración de la BD a Aiven:** `docs/migracion_aiven.md`
 - **Seguridad y autenticación JWT:** `docs/seguridad_autenticacion.md`
+- **Refactorización y optimización del backend:** `docs/refactorizacion_backend.md`
 - **Referencias de diseño:** `docs/referencias/referencias.md`
 - **Diagramas:** carpeta `docs/`

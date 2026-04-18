@@ -2,7 +2,7 @@ package com.musicreviews.backend.controller;
 
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.service.ResenaService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,32 +12,24 @@ import java.util.List;
 // La ruta base de todos sus endpoints es /api/resenas.
 @RestController
 @RequestMapping("/api/resenas")
+@RequiredArgsConstructor // Genera el constructor con los campos final — inyección por constructor
 public class ResenaController {
 
-    // Esto inyecta el servicio de reseñas para delegar en él toda la lógica de negocio.
-    @Autowired
-    private ResenaService resenaService;
+    private final ResenaService resenaService;
 
-    // GET /api/resenas?albumId= → esto devuelve todas las reseñas de un álbum concreto.
-    // GET /api/resenas?usuarioId= → esto devuelve todas las reseñas de un usuario concreto.
-    // Al menos uno de los dos parámetros debe estar presente.
+    // GET /api/resenas?albumId= → reseñas de un álbum.
+    // GET /api/resenas?usuarioId= → reseñas de un usuario.
     @GetMapping
     public ResponseEntity<List<Resena>> obtener(
             @RequestParam(required = false) Long albumId,
             @RequestParam(required = false) Long usuarioId) {
 
-        if (albumId != null) {
-            return ResponseEntity.ok(resenaService.obtenerPorAlbum(albumId));
-        }
-        if (usuarioId != null) {
-            return ResponseEntity.ok(resenaService.obtenerPorUsuario(usuarioId));
-        }
+        if (albumId != null) return ResponseEntity.ok(resenaService.obtenerPorAlbum(albumId));
+        if (usuarioId != null) return ResponseEntity.ok(resenaService.obtenerPorUsuario(usuarioId));
         return ResponseEntity.badRequest().build();
     }
 
-    // GET /api/resenas/usuario/{usuarioId}/album/{albumId}
-    // → esto busca la reseña concreta de un usuario sobre un álbum.
-    // Si no existe devuelve 404 Not Found.
+    // GET /api/resenas/usuario/{usuarioId}/album/{albumId} → reseña concreta de un usuario sobre un álbum.
     @GetMapping("/usuario/{usuarioId}/album/{albumId}")
     public ResponseEntity<Resena> obtenerPorUsuarioYAlbum(
             @PathVariable Long usuarioId, @PathVariable Long albumId) {
@@ -46,8 +38,7 @@ public class ResenaController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // POST /api/resenas → esto crea una reseña nueva.
-    // El servicio valida que la puntuación sea 1-5 y que el usuario no haya reseñado ya ese álbum.
+    // POST /api/resenas → crea una reseña. Valida puntuación (1-5) y que no exista duplicado.
     @PostMapping
     public ResponseEntity<Object> crear(@RequestBody Resena resena) {
         try {
@@ -57,8 +48,7 @@ public class ResenaController {
         }
     }
 
-    // PUT /api/resenas/{id} → esto actualiza la puntuación y el comentario de una reseña existente.
-    // Si no existe devuelve 404 Not Found.
+    // PUT /api/resenas/{id} → actualiza puntuación y comentario. 400 si puntuación inválida.
     @PutMapping("/{id}")
     public ResponseEntity<Object> actualizar(@PathVariable Long id, @RequestBody Resena datos) {
         try {
@@ -68,8 +58,7 @@ public class ResenaController {
         }
     }
 
-    // DELETE /api/resenas/{id} → esto elimina una reseña por su ID.
-    // Devuelve 204 No Content si se elimina correctamente, 404 si no existe.
+    // DELETE /api/resenas/{id} → elimina una reseña. 204 si ok, 404 si no existe.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         try {

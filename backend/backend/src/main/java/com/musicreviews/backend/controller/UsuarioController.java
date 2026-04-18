@@ -2,7 +2,7 @@ package com.musicreviews.backend.controller;
 
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.service.UsuarioService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,22 +10,22 @@ import java.util.List;
 
 // Esta clase expone los endpoints REST relacionados con los usuarios.
 // La ruta base de todos sus endpoints es /api/usuarios.
+// NOTA: el registro de nuevos usuarios se hace a través de /api/auth/register, no aquí.
+// Ese endpoint aplica BCrypt a la contraseña; crear usuarios desde aquí guardaría la contraseña en texto plano.
 @RestController
 @RequestMapping("/api/usuarios")
+@RequiredArgsConstructor // Genera el constructor con los campos final — inyección por constructor
 public class UsuarioController {
 
-    // Esto inyecta el servicio de usuarios para delegar en él toda la lógica de negocio.
-    @Autowired
-    private UsuarioService usuarioService;
+    private final UsuarioService usuarioService;
 
-    // GET /api/usuarios → esto devuelve la lista completa de usuarios.
+    // GET /api/usuarios → devuelve la lista completa de usuarios.
     @GetMapping
     public List<Usuario> obtenerTodos() {
         return usuarioService.obtenerTodos();
     }
 
-    // GET /api/usuarios/{id} → esto busca un usuario por su ID.
-    // Si no existe devuelve 404 Not Found.
+    // GET /api/usuarios/{id} → busca un usuario por su ID. 404 si no existe.
     @GetMapping("/{id}")
     public ResponseEntity<Usuario> obtenerPorId(@PathVariable Long id) {
         return usuarioService.obtenerPorId(id)
@@ -33,15 +33,7 @@ public class UsuarioController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // POST /api/usuarios → esto crea un usuario nuevo con los datos del cuerpo de la petición.
-    // Si el email o username ya existen, el servicio lanza una excepción.
-    @PostMapping
-    public ResponseEntity<Usuario> crear(@RequestBody Usuario usuario) {
-        return ResponseEntity.ok(usuarioService.guardar(usuario));
-    }
-
-    // PUT /api/usuarios/{id} → esto actualiza los datos de perfil de un usuario existente.
-    // Si no existe devuelve 404 Not Found.
+    // PUT /api/usuarios/{id} → actualiza username, foto de perfil y bio. No permite cambiar email ni contraseña.
     @PutMapping("/{id}")
     public ResponseEntity<Usuario> actualizar(@PathVariable Long id, @RequestBody Usuario datos) {
         try {
@@ -51,8 +43,7 @@ public class UsuarioController {
         }
     }
 
-    // DELETE /api/usuarios/{id} → esto elimina un usuario por su ID.
-    // Devuelve 204 No Content si se elimina correctamente, 404 si no existe.
+    // DELETE /api/usuarios/{id} → elimina un usuario. 204 si ok, 404 si no existe.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         try {

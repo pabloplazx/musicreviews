@@ -36,9 +36,9 @@ public class Album {
     @Column(columnDefinition = "TEXT")
     private String descripcion;
 
-    // Esto representa la relación con el artista al que pertenece el álbum.
-    // Se usa ManyToOne porque un artista puede tener muchos álbumes.
-    @ManyToOne
-    @JoinColumn(name = "artista_id")
+    // LAZY: el artista solo se carga desde la BD cuando se accede al campo, no al cargar el álbum.
+    // Evita cargar el objeto Artista completo en cada consulta de álbumes.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "artista_id", nullable = false)
     private Artista artista;
 }

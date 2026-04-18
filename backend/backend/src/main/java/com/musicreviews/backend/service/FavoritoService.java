@@ -3,7 +3,7 @@ package com.musicreviews.backend.service;
 import com.musicreviews.backend.model.Favorito;
 import com.musicreviews.backend.repository.FavoritoRepository;
 import jakarta.persistence.EntityManager;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,28 +12,28 @@ import java.util.List;
 // Esta clase contiene la lógica de negocio relacionada con los favoritos.
 // Se encarga de que un usuario no pueda añadir el mismo álbum dos veces.
 @Service
+@RequiredArgsConstructor // Genera el constructor con los campos final — inyección por constructor
 public class FavoritoService {
 
-    // Esto inyecta el repositorio de favoritos para poder acceder a la base de datos.
-    @Autowired
-    private FavoritoRepository favoritoRepository;
+    // final + @RequiredArgsConstructor reemplaza @Autowired. Los campos inmutables son más seguros y fáciles de testear.
+    private final FavoritoRepository favoritoRepository;
 
-    // Esto permite refrescar entidades desde la BD para obtener los datos completos tras un save.
-    @Autowired
-    private EntityManager entityManager;
+    // Necesario para forzar la recarga de relaciones LAZY tras un save() dentro de la misma transacción.
+    private final EntityManager entityManager;
 
-    // Esto devuelve todos los álbumes marcados como favoritos por un usuario.
+    // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
+    @Transactional(readOnly = true)
     public List<Favorito> obtenerPorUsuario(Long usuarioId) {
         return favoritoRepository.findByUsuarioId(usuarioId);
     }
 
-    // Esto comprueba si un álbum ya está en la lista de favoritos de un usuario.
+    @Transactional(readOnly = true)
     public boolean esFavorito(Long usuarioId, Long albumId) {
         return favoritoRepository.existsByUsuarioIdAndAlbumId(usuarioId, albumId);
     }
 
-    // Esto añade un álbum a favoritos. Antes comprueba que no esté ya en la lista.
-    // Usa @Transactional para que refresh() pueda recargar las relaciones desde la BD.
+    // @Transactional permite que entityManager.refresh() recargue las relaciones LAZY desde la BD
+    // tras el save(), evitando que Spring devuelva la instancia cacheada con campos nulos.
     @Transactional
     public Favorito agregar(Favorito favorito) {
         if (favoritoRepository.existsByUsuarioIdAndAlbumId(
@@ -45,8 +45,7 @@ public class FavoritoService {
         return guardado;
     }
 
-    // Esto elimina un favorito concreto. Usa @Transactional porque deleteBy... es una operación
-    // de escritura personalizada que JPA necesita ejecutar dentro de una transacción.
+    // @Transactional necesario porque deleteBy... es una operación de escritura personalizada de JPA.
     @Transactional
     public void eliminar(Long usuarioId, Long albumId) {
         if (!favoritoRepository.existsByUsuarioIdAndAlbumId(usuarioId, albumId)) {

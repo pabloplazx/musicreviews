@@ -436,3 +436,19 @@ Authorization: Bearer <token>
 - `ADMIN` — puede además crear/editar/borrar artistas, álbumes e importar desde Spotify
 
 Ver documentación completa en `docs/seguridad_autenticacion.md`.
+
+---
+
+## Refactorización y optimización ✅
+
+Tras la implementación inicial se realizó una revisión completa del código aplicando:
+
+- **Constructor injection** con `@RequiredArgsConstructor` en todos los servicios y controladores — reemplaza `@Autowired` en campo (patrón antiguo)
+- **`@Transactional(readOnly = true)`** en todos los métodos de lectura — Hibernate no rastrea cambios, ahorrando memoria y CPU
+- **`FetchType.LAZY`** en todas las relaciones `@ManyToOne` — evita queries innecesarias al cargar entidades relacionadas
+- **Eliminación de queries redundantes** en `ResenaService` — `save()` ya devuelve la entidad, el `findById` posterior era innecesario
+- **Eliminación de `POST /api/usuarios`** — agujero de seguridad (contraseñas sin BCrypt); el registro va por `/api/auth/register`
+- **`AuthController` usa `UsuarioService`** en lugar del repositorio directamente — respeta la separación de capas
+- **`open-in-view=false`** y **`show-sql=false`** en `application.properties` — mejoras de rendimiento en producción
+
+Ver documentación detallada con ejemplos en `docs/refactorizacion_backend.md`.

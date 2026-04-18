@@ -19,15 +19,13 @@ public class Resena {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Esto representa la relación con el usuario que ha escrito la reseña.
-    // Se usa ManyToOne porque un usuario puede tener muchas reseñas.
-    @ManyToOne
+    // LAZY: el usuario solo se carga cuando se accede al campo, no al cargar la reseña.
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "usuario_id", nullable = false)
     private Usuario usuario;
 
-    // Esto representa la relación con el álbum sobre el que trata la reseña.
-    // Se usa ManyToOne porque un álbum puede tener muchas reseñas.
-    @ManyToOne
+    // LAZY: el álbum solo se carga cuando se accede al campo, no al cargar la reseña.
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "album_id", nullable = false)
     private Album album;
 

@@ -2,8 +2,9 @@ package com.musicreviews.backend.service;
 
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.UsuarioRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,33 +12,34 @@ import java.util.Optional;
 // Esta clase contiene la lógica de negocio relacionada con los usuarios.
 // Se encarga de validar que no haya duplicados de email o username antes de guardar.
 @Service
+@RequiredArgsConstructor // Genera el constructor con los campos final — inyección por constructor
 public class UsuarioService {
 
-    // Esto inyecta el repositorio de usuarios para poder acceder a la base de datos.
-    @Autowired
-    private UsuarioRepository usuarioRepository;
+    // final + @RequiredArgsConstructor reemplaza @Autowired. Los campos inmutables son más seguros y fáciles de testear.
+    private final UsuarioRepository usuarioRepository;
 
-    // Esto devuelve todos los usuarios registrados en la aplicación.
+    // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
+    @Transactional(readOnly = true)
     public List<Usuario> obtenerTodos() {
         return usuarioRepository.findAll();
     }
 
-    // Esto busca un usuario por su ID. Devuelve Optional porque puede no existir.
+    @Transactional(readOnly = true)
     public Optional<Usuario> obtenerPorId(Long id) {
         return usuarioRepository.findById(id);
     }
 
-    // Esto busca un usuario por su email. Se usa principalmente durante el login.
+    @Transactional(readOnly = true)
     public Optional<Usuario> obtenerPorEmail(String email) {
         return usuarioRepository.findByEmail(email);
     }
 
-    // Esto busca un usuario por su username. Se usa para mostrar perfiles públicos.
+    @Transactional(readOnly = true)
     public Optional<Usuario> obtenerPorUsername(String username) {
         return usuarioRepository.findByUsername(username);
     }
 
-    // Esto registra un usuario nuevo. Antes comprueba que el email y el username no estén ya en uso.
+    @Transactional
     public Usuario guardar(Usuario usuario) {
         if (usuarioRepository.existsByEmail(usuario.getEmail())) {
             throw new RuntimeException("Ya existe un usuario con ese email");
@@ -48,8 +50,7 @@ public class UsuarioService {
         return usuarioRepository.save(usuario);
     }
 
-    // Esto actualiza los datos del perfil de un usuario: username, foto de perfil y bio.
-    // No permite cambiar el email ni la contraseña desde aquí.
+    @Transactional
     public Usuario actualizar(Long id, Usuario datosActualizados) {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
@@ -61,7 +62,7 @@ public class UsuarioService {
         return usuarioRepository.save(usuario);
     }
 
-    // Esto elimina un usuario por su ID. Lanza excepción si no existe.
+    @Transactional
     public void eliminar(Long id) {
         if (!usuarioRepository.existsById(id)) {
             throw new RuntimeException("Usuario no encontrado");
