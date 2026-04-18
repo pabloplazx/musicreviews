@@ -90,5 +90,6 @@ La API quedará disponible en `http://localhost:8080`.
 - **API REST completa:** `backend/backend/src/main/java/com/musicreviews/backend/README.md`
 - **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
 - **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
+- **Migración de la BD a Aiven:** `docs/migracion_aiven.md`
 - **Referencias de diseño:** `docs/referencias/referencias.md`
 - **Diagramas:** carpeta `docs/`
