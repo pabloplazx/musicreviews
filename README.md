@@ -104,15 +104,16 @@ python -X utf8 database/seed_data.py
 
 ## Tests
 
-El backend cuenta con **36 tests unitarios** que cubren la lógica de negocio principal:
+El backend cuenta con **37 tests unitarios** (+ 1 test de contexto) que cubren la lógica de negocio principal:
 
 | Clase de test | Tests | Qué cubre |
 |---|---|---|
-| `ResenaServiceTest` | 8 | Crear, actualizar, eliminar reseñas — validaciones y duplicados |
-| `UsuarioServiceTest` | 8 | Registro, actualización, login, desactivación |
+| `ResenaServiceTest` | 11 | Crear, actualizar, eliminar reseñas — validaciones y duplicados |
+| `UsuarioServiceTest` | 7 | Registro, actualización, login, desactivación |
 | `FavoritoServiceTest` | 7 | Agregar, eliminar, listar favoritos |
 | `ArtistaServiceTest` | 7 | CRUD de artistas |
-| `EstadisticasServiceTest` | 6 | Rankings, top álbumes, estadísticas generales |
+| `EstadisticasServiceTest` | 5 | Rankings, top álbumes, estadísticas generales |
+| `BackendApplicationTests` | 1 | Carga del contexto de Spring Boot |
 
 ```bash
 cd backend/backend
