@@ -27,19 +27,24 @@ MusicReviews_TFG/
 │       │   ├── service/          ← Lógica de negocio
 │       │   ├── controller/       ← Endpoints REST
 │       │   ├── security/         ← JWT (JwtUtil, JwtFilter, UserDetailsServiceImpl)
+│       │   ├── exception/        ← Excepciones tipadas + GlobalExceptionHandler
 │       │   ├── dto/              ← Objetos de transferencia (register, login, auth response)
 │       │   ├── SecurityConfig.java
 │       │   └── README.md         ← Documentación completa de la API
 │       └── src/main/resources/
 │           └── application.properties.example
 ├── database/
-│   └── schema.sql                ← Script SQL para crear la base de datos
+│   ├── schema.sql                ← Script SQL para crear la base de datos
+│   └── seed_data.py              ← Script Python para cargar datos de ejemplo vía API
 └── docs/
     ├── diagrama_arquitectura.png
-    ├── diagrama_bd.png
+    ├── diagrama_bd_nuevo.png
     ├── diagrama_clases.png
     ├── diagrama_casos_uso.png
     ├── pruebas_postman.md        ← Registro de pruebas y bugs resueltos
+    ├── migracion_aiven.md        ← Proceso de migración de BD local a Aiven (MySQL cloud)
+    ├── seguridad_autenticacion.md ← JWT, BCrypt, CORS y protección de contraseñas
+    ├── refactorizacion_backend.md ← Optimizaciones y refactorizaciones del backend
     ├── importacion/              ← Scripts y documentación del proceso de importación desde Spotify
     └── referencias/              ← Enlaces e inspiración para el diseño del frontend
 ```
@@ -84,6 +89,54 @@ cd backend/backend
 ```
 
 La API quedará disponible en `http://localhost:8080`.
+
+### 4. Cargar datos de ejemplo (opcional)
+
+El script `database/seed_data.py` carga 5 usuarios, 30 reseñas y 25 favoritos a través de la API. Requiere que el backend esté corriendo:
+
+```bash
+python -X utf8 database/seed_data.py
+```
+
+> La flag `-X utf8` es necesaria en Windows para evitar errores de codificación con caracteres especiales.
+
+---
+
+## Tests
+
+El backend cuenta con **36 tests unitarios** que cubren la lógica de negocio principal:
+
+| Clase de test | Tests | Qué cubre |
+|---|---|---|
+| `ResenaServiceTest` | 8 | Crear, actualizar, eliminar reseñas — validaciones y duplicados |
+| `UsuarioServiceTest` | 8 | Registro, actualización, login, desactivación |
+| `FavoritoServiceTest` | 7 | Agregar, eliminar, listar favoritos |
+| `ArtistaServiceTest` | 7 | CRUD de artistas |
+| `EstadisticasServiceTest` | 6 | Rankings, top álbumes, estadísticas generales |
+
+```bash
+cd backend/backend
+./mvnw test
+```
+
+---
+
+## Manejo de errores
+
+Todos los endpoints devuelven errores en formato JSON uniforme gracias al `GlobalExceptionHandler`:
+
+```json
+{
+    "timestamp": "2026-04-20T12:34:56.789",
+    "status": 404,
+    "mensaje": "Álbum no encontrado"
+}
+```
+
+- `404` — recurso no encontrado (álbum, artista, usuario, reseña, favorito)
+- `400` — regla de negocio violada (reseña duplicada, puntuación inválida, email ya en uso...)
+- `401` — no autenticado
+- `403` — autenticado pero sin permisos
 
 ---
 

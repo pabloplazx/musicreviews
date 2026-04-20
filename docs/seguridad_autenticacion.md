@@ -59,7 +59,7 @@ Está firmado con HMAC-SHA512 usando la clave secreta del `application.propertie
 
 ```
 com.musicreviews.backend/
-├── SecurityConfig.java              ← Configuración de rutas y filtros
+├── SecurityConfig.java              ← Configuración de rutas, filtros y CORS
 ├── security/
 │   ├── JwtUtil.java                 ← Genera y valida tokens JWT
 │   ├── JwtFilter.java               ← Intercepta requests y verifica el token
@@ -152,6 +152,54 @@ Hibernate los añadió automáticamente en Aiven al arrancar con `ddl-auto=updat
 alter table usuario add column activo bit not null
 alter table usuario add column fecha_ultimo_login datetime(6)
 ```
+
+---
+
+## Mejoras de seguridad adicionales (20/04/2026)
+
+### Protección del hash de contraseña
+
+El campo `password` de `Usuario` nunca debe aparecer en respuestas JSON. Se protegió con:
+
+```java
+@JsonAutoDetect(fieldVisibility = ANY, getterVisibility = NONE, isGetterVisibility = NONE)
+@Entity @Data
+public class Usuario {
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String password;
+}
+```
+
+El hash BCrypt de la contraseña ahora se acepta en escritura (registro) pero nunca se incluye en ninguna respuesta de la API.
+
+**Por qué son necesarias las dos anotaciones:** la anotación de campo sola no basta porque Lombok `@Data` genera `getPassword()`, y Jackson usa ese getter ignorando la anotación del campo. Se necesita `@JsonAutoDetect` para decirle a Jackson que use los campos directamente y descarte los getters.
+
+---
+
+### CORS para el frontend
+
+Se configuró CORS en `SecurityConfig` para permitir peticiones desde `http://localhost:5173` (Vite):
+
+```java
+config.setAllowedOrigins(List.of("http://localhost:5173"));
+config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+config.setAllowedHeaders(List.of("*"));
+config.setAllowCredentials(true);
+```
+
+La configuración se aplica a todas las rutas (`/**`) y está integrada en el `filterChain` de Spring Security.
+
+---
+
+### Constructor injection en la capa de seguridad
+
+`JwtFilter` y `UserDetailsServiceImpl` ahora usan `@RequiredArgsConstructor` con campos `final`, igual que el resto de clases del proyecto. Antes usaban `@Autowired` sobre campos, que es el patrón antiguo de Spring.
+
+---
+
+### `fechaUltimoLogin` ahora se persiste correctamente
+
+El flujo de login llama a `usuarioService.actualizarUltimoLogin(id)`, un método dedicado que carga el usuario y guarda la fecha actual. Antes se usaba `actualizar()`, que solo copia los campos de perfil (username, foto, bio) y nunca actualizaba la fecha.
 
 ---
 

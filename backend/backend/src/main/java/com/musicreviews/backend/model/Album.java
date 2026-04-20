@@ -36,9 +36,8 @@ public class Album {
     @Column(columnDefinition = "TEXT")
     private String descripcion;
 
-    // LAZY: el artista solo se carga desde la BD cuando se accede al campo, no al cargar el álbum.
-    // Evita cargar el objeto Artista completo en cada consulta de álbumes.
-    @ManyToOne(fetch = FetchType.LAZY)
+    // EAGER: el artista se carga siempre junto al álbum porque es necesario para mostrarlo.
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "artista_id", nullable = false)
     private Artista artista;
 }

@@ -163,7 +163,7 @@ public class AuthController {
 
 ---
 
-## Resumen de mejoras
+## Resumen de mejoras (primera ronda)
 
 | Cambio | Tipo | Impacto |
 |---|---|---|
@@ -175,3 +175,114 @@ public class AuthController {
 | `AuthController` usa servicio | Arquitectura | Respeta la separación de capas |
 | `open-in-view=false` | Rendimiento | Libera conexiones a la BD antes |
 | `show-sql=false` | Rendimiento | Elimina I/O innecesario en logs |
+
+---
+
+## Segunda ronda de optimizaciones (20/04/2026)
+
+### 9. Manejo de errores centralizado con `GlobalExceptionHandler`
+
+**Archivos creados:**
+- `exception/RecursoNoEncontradoException.java` — lanza HTTP 404
+- `exception/ReglaNegocioException.java` — lanza HTTP 400
+- `exception/GlobalExceptionHandler.java` — `@RestControllerAdvice` que intercepta ambas y devuelve JSON uniforme
+
+**Antes:** cada controlador devolvía errores de formas distintas — algunos `ResponseEntity.notFound().build()` (sin body), otros `ResponseEntity.badRequest().body("string plano")`, y los `try-catch` mezclaban lógica de error con lógica de negocio.
+
+**Después:** todos los servicios lanzan excepciones tipadas. El `GlobalExceptionHandler` las convierte a un JSON uniforme:
+
+```json
+{
+    "timestamp": "2026-04-20T12:34:56.789",
+    "status": 404,
+    "mensaje": "Álbum no encontrado"
+}
+```
+
+Esto elimina todo el código de manejo de errores disperso por los controladores y garantiza un formato consistente en todos los endpoints.
+
+---
+
+### 10. Protección de contraseña con `@JsonProperty(WRITE_ONLY)`
+
+**Afecta a:** `model/Usuario.java`
+
+**Problema:** el hash BCrypt de la contraseña se incluía en todas las respuestas JSON de la API. Cualquier `GET /api/usuarios/{id}` devolvía el hash.
+
+**Solución:**
+```java
+@JsonAutoDetect(fieldVisibility = ANY, getterVisibility = NONE, isGetterVisibility = NONE)
+@Entity @Data
+public class Usuario {
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String password;
+}
+```
+
+**Por qué son necesarias las dos anotaciones:** `@JsonProperty(WRITE_ONLY)` a nivel de campo funciona correctamente. Pero Lombok `@Data` genera un método `getPassword()`, y Jackson detecta ese getter y serializa el campo ignorando la anotación del campo. La solución es decirle a Jackson que ignore los getters (`getterVisibility = NONE`) y use directamente los campos (`fieldVisibility = ANY`).
+
+---
+
+### 11. Corrección de `fechaUltimoLogin`
+
+**Afecta a:** `service/UsuarioService.java`, `controller/AuthController.java`
+
+**Problema:** `AuthController.login` llamaba a `usuarioService.actualizar(id, datos)`, que solo copia `username`, `fotoPerfil` y `bio`. `fechaUltimoLogin` nunca se guardaba en la BD.
+
+**Solución:** método dedicado en el servicio:
+
+```java
+@Transactional
+public void actualizarUltimoLogin(Long id) {
+    Usuario usuario = usuarioRepository.findById(id)
+            .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+    usuario.setFechaUltimoLogin(LocalDateTime.now());
+    usuarioRepository.save(usuario);
+}
+```
+
+`AuthController.login` llama ahora a `actualizarUltimoLogin(usuario.getId())` justo antes de devolver el token.
+
+---
+
+### 12. CORS configurado para el frontend
+
+**Afecta a:** `SecurityConfig.java`
+
+Se añadió configuración CORS explícita en Spring Security para permitir peticiones desde `http://localhost:5173` (puerto de Vite en desarrollo):
+
+```java
+@Bean
+public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOrigins(List.of("http://localhost:5173"));
+    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+    config.setAllowedHeaders(List.of("*"));
+    config.setAllowCredentials(true);
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", config);
+    return source;
+}
+```
+
+Sin esto, el navegador bloquearía todas las peticiones del frontend al backend.
+
+---
+
+### 13. Constructor injection en la capa de seguridad
+
+**Afecta a:** `security/JwtFilter.java`, `security/UserDetailsServiceImpl.java`
+
+La primera ronda de refactorización aplicó constructor injection en servicios y controladores, pero se olvidó la capa de seguridad. Ahora también usan `@RequiredArgsConstructor` con campos `final`, igual que el resto de clases del proyecto.
+
+---
+
+## Resumen de mejoras (segunda ronda)
+
+| Cambio | Tipo | Impacto |
+|---|---|---|
+| `GlobalExceptionHandler` | Calidad + Seguridad | Errores JSON uniformes, elimina try-catch dispersos |
+| `@JsonProperty(WRITE_ONLY)` en password | Seguridad | Hash BCrypt nunca expuesto en respuestas |
+| `actualizarUltimoLogin` dedicado | Corrección | `fechaUltimoLogin` ahora se persiste correctamente |
+| CORS para `localhost:5173` | Funcionalidad | Frontend puede comunicarse con el backend |
+| Constructor injection en security/ | Calidad | Consistencia con el resto del proyecto |
