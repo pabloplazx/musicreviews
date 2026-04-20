@@ -134,3 +134,73 @@ Páginas planificadas:
 - Rankings / Estadísticas
 
 Stack: React + Vite, con decisiones de librerías pendientes de definir.
+
+---
+
+## Semana 7 — Inicio del frontend (20/04/2026)
+
+**Fase:** FASE 3 — Frontend React + Vite
+
+### Puesta a punto del entorno
+
+- Node.js v24.14.1 y npm 11 ya instalados.
+- Creado el proyecto frontend en `C:\Users\plaza\Desktop\musicreviews-frontend` con:
+  ```bash
+  npm create vite@latest musicreviews-frontend -- --template react
+  ```
+- Instalado Tailwind CSS v4 con el plugin oficial para Vite:
+  ```bash
+  npm install -D tailwindcss @tailwindcss/vite
+  ```
+- Configurado `vite.config.js` con el plugin de Tailwind.
+- `src/index.css` reducido a `@import "tailwindcss"` (sintaxis de Tailwind v4).
+- Verificado que Tailwind funciona: fondo negro + texto blanco con clases de utilidad.
+
+### Decisiones de diseño tomadas
+
+- **Estilo:** oscuro (dark mode) — referencia principal Letterboxd.
+- **Tipografía:** Bebas Neue (títulos) + Inter (texto general) — máximo 2 fuentes.
+- **Librería de estilos:** Tailwind CSS — clases de utilidad directamente en JSX.
+- **Iconos:** Heroicons (pendiente de instalar).
+- **Paleta de colores:** pendiente de definir en Realtime Colors.
+- **Diseño Figma:** pendiente — se diseñará antes de codificar las pantallas.
+
+### Herramientas de diseño seleccionadas
+
+| Herramienta | Uso |
+|---|---|
+| Figma | Diseño de pantallas y design system |
+| Realtime Colors | Definir y previsualizar la paleta de colores |
+| Google Fonts | Elegir tipografías (Bebas Neue + Inter) |
+| Heroicons | Iconos SVG para React |
+
+### Estructura de carpetas creada
+
+```
+src/
+├── components/
+│   ├── ui/        ← componentes reutilizables (botones, tarjetas, badges...)
+│   └── layout/    ← navbar, footer, estructura de página
+├── pages/         ← cada pantalla de la app
+├── services/      ← llamadas al backend (API REST)
+├── hooks/         ← lógica reutilizable entre componentes
+├── context/       ← datos globales (usuario logueado, token JWT)
+├── assets/
+│   ├── fonts/     ← tipografías
+│   └── images/    ← imágenes estáticas
+├── App.jsx
+└── index.css
+```
+
+### Pasos previos antes de codificar (en orden)
+
+1. Definir paleta de colores en Realtime Colors
+2. Elegir tipografías en Google Fonts
+3. Crear Design System en Figma (paleta + tipografías + componentes base)
+4. Diseñar las 6 pantallas en Figma usando esos componentes
+
+### Estado actual
+
+- Entorno configurado y funcionando ✅
+- Estructura de carpetas creada ✅
+- Diseño Figma pendiente ⏳
