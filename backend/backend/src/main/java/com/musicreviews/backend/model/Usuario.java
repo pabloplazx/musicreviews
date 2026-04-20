@@ -1,5 +1,7 @@
 package com.musicreviews.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -7,6 +9,8 @@ import java.time.LocalDateTime;
 
 // Esta clase representa la tabla "usuario" en la base de datos.
 // Cada instancia de esta clase es un usuario registrado en la aplicación.
+// Jackson usa los campos directamente (no getters) para que @JsonProperty en campos funcione con @Data de Lombok.
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY, getterVisibility = JsonAutoDetect.Visibility.NONE, isGetterVisibility = JsonAutoDetect.Visibility.NONE)
 @Entity
 @Table(name = "usuario")
 @Data
@@ -26,6 +30,8 @@ public class Usuario {
     private String email;
 
     // Contraseña del usuario. Se guardará encriptada con BCrypt antes de persistir.
+    // WRITE_ONLY: el campo se puede recibir en el body (registro) pero nunca se serializa en respuestas.
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @Column(nullable = false)
     private String password;
 

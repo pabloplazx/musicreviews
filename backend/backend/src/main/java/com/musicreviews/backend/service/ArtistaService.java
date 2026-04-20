@@ -1,5 +1,6 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Artista;
 import com.musicreviews.backend.repository.ArtistaRepository;
 import lombok.RequiredArgsConstructor;
@@ -55,7 +56,7 @@ public class ArtistaService {
     @Transactional
     public void eliminar(Long id) {
         if (!artistaRepository.existsById(id)) {
-            throw new RuntimeException("Artista no encontrado");
+            throw new RecursoNoEncontradoException("Artista no encontrado");
         }
         artistaRepository.deleteById(id);
     }

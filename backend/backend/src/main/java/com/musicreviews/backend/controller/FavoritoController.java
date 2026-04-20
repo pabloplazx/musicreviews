@@ -32,23 +32,15 @@ public class FavoritoController {
 
     // POST /api/favoritos → añade un álbum a favoritos. 400 si ya estaba añadido.
     @PostMapping
-    public ResponseEntity<Object> agregar(@RequestBody Favorito favorito) {
-        try {
-            return ResponseEntity.ok(favoritoService.agregar(favorito));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public ResponseEntity<Favorito> agregar(@RequestBody Favorito favorito) {
+        return ResponseEntity.ok(favoritoService.agregar(favorito));
     }
 
     // DELETE /api/favoritos?usuarioId=&albumId= → elimina un favorito. 204 si ok, 404 si no existía.
     @DeleteMapping
     public ResponseEntity<Void> eliminar(
             @RequestParam Long usuarioId, @RequestParam Long albumId) {
-        try {
-            favoritoService.eliminar(usuarioId, albumId);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        favoritoService.eliminar(usuarioId, albumId);
+        return ResponseEntity.noContent().build();
     }
 }

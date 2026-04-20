@@ -1,12 +1,15 @@
 package com.musicreviews.backend.controller;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.service.AlbumService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 // Esta clase expone los endpoints REST relacionados con los álbumes.
 // La ruta base de todos sus endpoints es /api/albumes.
@@ -17,26 +20,28 @@ public class AlbumController {
 
     private final AlbumService albumService;
 
-    // GET /api/albumes → devuelve todos los álbumes.
-    // Acepta ?titulo=, ?genero= y ?artistaId= para filtrar resultados.
+    // GET /api/albumes → devuelve álbumes paginados.
+    // Acepta ?titulo=, ?genero=, ?artistaId= para filtrar, y ?page=0&size=12 para paginar.
     @GetMapping
-    public List<Album> obtenerTodos(
+    public Page<Album> obtenerTodos(
             @RequestParam(required = false) String titulo,
             @RequestParam(required = false) String genero,
-            @RequestParam(required = false) Long artistaId) {
+            @RequestParam(required = false) Long artistaId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size) {
 
-        if (titulo != null && !titulo.isBlank()) return albumService.buscarPorTitulo(titulo);
-        if (genero != null && !genero.isBlank()) return albumService.obtenerPorGenero(genero);
-        if (artistaId != null) return albumService.obtenerPorArtista(artistaId);
-        return albumService.obtenerTodos();
+        Pageable pageable = PageRequest.of(page, size, Sort.by("titulo").ascending());
+        if (titulo != null && !titulo.isBlank()) return albumService.buscarPorTitulo(titulo, pageable);
+        if (genero != null && !genero.isBlank()) return albumService.obtenerPorGenero(genero, pageable);
+        if (artistaId != null) return albumService.obtenerPorArtista(artistaId, pageable);
+        return albumService.obtenerTodos(pageable);
     }
 
-    // GET /api/albumes/{id} → busca un álbum por su ID. 404 si no existe.
+    // GET /api/albumes/{id} → busca un álbum por su ID. 404 JSON si no existe.
     @GetMapping("/{id}")
     public ResponseEntity<Album> obtenerPorId(@PathVariable Long id) {
-        return albumService.obtenerPorId(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(albumService.obtenerPorId(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Álbum no encontrado")));
     }
 
     // POST /api/albumes → crea un álbum nuevo. Solo accesible por ADMIN (SecurityConfig).
@@ -48,21 +53,13 @@ public class AlbumController {
     // PUT /api/albumes/{id} → actualiza todos los campos de un álbum. 404 si no existe.
     @PutMapping("/{id}")
     public ResponseEntity<Album> actualizar(@PathVariable Long id, @RequestBody Album datos) {
-        try {
-            return ResponseEntity.ok(albumService.actualizar(id, datos));
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(albumService.actualizar(id, datos));
     }
 
     // DELETE /api/albumes/{id} → elimina un álbum. 204 si ok, 404 si no existe.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        try {
-            albumService.eliminar(id);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        albumService.eliminar(id);
+        return ResponseEntity.noContent().build();
     }
 }

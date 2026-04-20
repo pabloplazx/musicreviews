@@ -1,5 +1,7 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
+import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.repository.ResenaRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +42,7 @@ public class ResenaService {
 
         if (resenaRepository.existsByUsuarioIdAndAlbumId(
                 resena.getUsuario().getId(), resena.getAlbum().getId())) {
-            throw new RuntimeException("El usuario ya ha reseñado este álbum");
+            throw new ReglaNegocioException("El usuario ya ha reseñado este álbum");
         }
 
         // save() devuelve la entidad guardada con el id asignado — el findById posterior era redundante.
@@ -50,7 +52,7 @@ public class ResenaService {
     @Transactional
     public Resena actualizar(Long id, Resena datosActualizados) {
         Resena resena = resenaRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Reseña no encontrada"));
+                .orElseThrow(() -> new RecursoNoEncontradoException("Reseña no encontrada"));
 
         validarPuntuacion(datosActualizados.getPuntuacion());
 
@@ -64,14 +66,14 @@ public class ResenaService {
     @Transactional
     public void eliminar(Long id) {
         if (!resenaRepository.existsById(id)) {
-            throw new RuntimeException("Reseña no encontrada");
+            throw new RecursoNoEncontradoException("Reseña no encontrada");
         }
         resenaRepository.deleteById(id);
     }
 
     private void validarPuntuacion(int puntuacion) {
         if (puntuacion < 1 || puntuacion > 5) {
-            throw new RuntimeException("La puntuación debe estar entre 1 y 5");
+            throw new ReglaNegocioException("La puntuación debe estar entre 1 y 5");
         }
     }
 }

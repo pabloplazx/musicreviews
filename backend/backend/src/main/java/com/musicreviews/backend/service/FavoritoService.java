@@ -1,5 +1,7 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
+import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Favorito;
 import com.musicreviews.backend.repository.FavoritoRepository;
 import jakarta.persistence.EntityManager;
@@ -38,7 +40,7 @@ public class FavoritoService {
     public Favorito agregar(Favorito favorito) {
         if (favoritoRepository.existsByUsuarioIdAndAlbumId(
                 favorito.getUsuario().getId(), favorito.getAlbum().getId())) {
-            throw new RuntimeException("El álbum ya está en favoritos");
+            throw new ReglaNegocioException("El álbum ya está en favoritos");
         }
         Favorito guardado = favoritoRepository.save(favorito);
         entityManager.refresh(guardado);
@@ -49,7 +51,7 @@ public class FavoritoService {
     @Transactional
     public void eliminar(Long usuarioId, Long albumId) {
         if (!favoritoRepository.existsByUsuarioIdAndAlbumId(usuarioId, albumId)) {
-            throw new RuntimeException("El álbum no está en favoritos");
+            throw new RecursoNoEncontradoException("El álbum no está en favoritos");
         }
         favoritoRepository.deleteByUsuarioIdAndAlbumId(usuarioId, albumId);
     }

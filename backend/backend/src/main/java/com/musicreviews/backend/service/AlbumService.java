@@ -1,12 +1,14 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.repository.AlbumRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Optional;
 
 // Esta clase contiene la lógica de negocio relacionada con los álbumes.
@@ -20,8 +22,8 @@ public class AlbumService {
 
     // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
     @Transactional(readOnly = true)
-    public List<Album> obtenerTodos() {
-        return albumRepository.findAll();
+    public Page<Album> obtenerTodos(Pageable pageable) {
+        return albumRepository.findAll(pageable);
     }
 
     @Transactional(readOnly = true)
@@ -30,18 +32,18 @@ public class AlbumService {
     }
 
     @Transactional(readOnly = true)
-    public List<Album> buscarPorTitulo(String titulo) {
-        return albumRepository.findByTituloContainingIgnoreCase(titulo);
+    public Page<Album> buscarPorTitulo(String titulo, Pageable pageable) {
+        return albumRepository.findByTituloContainingIgnoreCase(titulo, pageable);
     }
 
     @Transactional(readOnly = true)
-    public List<Album> obtenerPorArtista(Long artistaId) {
-        return albumRepository.findByArtistaId(artistaId);
+    public Page<Album> obtenerPorArtista(Long artistaId, Pageable pageable) {
+        return albumRepository.findByArtistaId(artistaId, pageable);
     }
 
     @Transactional(readOnly = true)
-    public List<Album> obtenerPorGenero(String genero) {
-        return albumRepository.findByGeneroIgnoreCase(genero);
+    public Page<Album> obtenerPorGenero(String genero, Pageable pageable) {
+        return albumRepository.findByGeneroIgnoreCase(genero, pageable);
     }
 
     @Transactional
@@ -67,7 +69,7 @@ public class AlbumService {
     @Transactional
     public void eliminar(Long id) {
         if (!albumRepository.existsById(id)) {
-            throw new RuntimeException("Álbum no encontrado");
+            throw new RecursoNoEncontradoException("Álbum no encontrado");
         }
         albumRepository.deleteById(id);
     }

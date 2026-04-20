@@ -41,10 +41,52 @@ com.musicreviews.backend/
 ├── repository/     ← Acceso a la BD (Spring Data JPA)
 ├── service/        ← Lógica de negocio
 ├── controller/     ← Endpoints REST
+├── exception/      ← Excepciones personalizadas + GlobalExceptionHandler
 ├── security/       ← JwtUtil, JwtFilter, UserDetailsServiceImpl
 ├── dto/            ← RegisterRequest, LoginRequest, AuthResponse
 └── SecurityConfig  ← Configuración de Spring Security + rutas por rol
 ```
+
+---
+
+## exception/ — Manejo de errores centralizado ✅
+
+Gestiona de forma uniforme todos los errores de la API. Antes de añadir este paquete, cada controlador tenía sus propios bloques `try-catch` que devolvían respuestas inconsistentes. Ahora los servicios lanzan excepciones tipadas y el `GlobalExceptionHandler` las intercepta y devuelve siempre el mismo formato JSON.
+
+### Excepciones personalizadas
+
+| Clase | HTTP | Cuándo se lanza |
+|---|---|---|
+| `RecursoNoEncontradoException` | 404 | Entidad no encontrada en BD (usuario, artista, álbum, reseña, favorito) |
+| `ReglaNegocioException` | 400 | Violación de regla de negocio (duplicados, puntuación inválida) |
+
+### GlobalExceptionHandler
+
+Clase anotada con `@RestControllerAdvice` que intercepta las excepciones lanzadas por cualquier controlador y devuelve siempre el mismo formato JSON:
+
+```json
+{
+  "timestamp": "2026-04-20T11:28:48.659",
+  "status": 404,
+  "mensaje": "Reseña no encontrada"
+}
+```
+
+---
+
+## dto/ — Data Transfer Objects
+
+Los DTOs son clases que definen la estructura exacta de los datos que se envían en las respuestas JSON. Se usan cuando la respuesta no corresponde directamente a una entidad.
+
+| Clase | Descripción |
+|---|---|
+| `RegisterRequest` | Datos de registro: username, email, password |
+| `LoginRequest` | Datos de login: email, password |
+| `AuthResponse` | Respuesta de autenticación: token JWT |
+| `ResumenDTO` | Totales globales: totalAlbumes, totalArtistas, totalResenas, totalUsuarios |
+| `AlbumEstadisticaDTO` | Álbum + valor numérico (puntuación media o número de reseñas) |
+| `ArtistaEstadisticaDTO` | Artista + puntuación media calculada desde sus álbumes |
+| `GeneroEstadisticaDTO` | Género musical + total de álbumes de ese género |
 
 ---
 
@@ -183,11 +225,16 @@ Extiende `JpaRepository<Artista, Long>`.
 ### AlbumRepository ✅
 Extiende `JpaRepository<Album, Long>`.
 
+Todos los métodos de búsqueda aceptan un `Pageable` y devuelven `Page<Album>` para soportar paginación.
+
 | Método | Descripción |
 |---|---|
-| `findByTituloContainingIgnoreCase(titulo)` | Búsqueda de álbumes por título (buscador, ignora mayúsculas) |
-| `findByArtistaId(artistaId)` | Obtener todos los álbumes de un artista |
-| `findByGeneroIgnoreCase(genero)` | Filtrar álbumes por género |
+| `findByTituloContainingIgnoreCase(titulo, pageable)` | Búsqueda de álbumes por título (buscador, ignora mayúsculas) |
+| `findByArtistaId(artistaId, pageable)` | Obtener álbumes de un artista (paginado) |
+| `findByArtistaId(artistaId)` | Obtener todos los álbumes de un artista — uso interno de SpotifyService |
+| `findByGeneroIgnoreCase(genero, pageable)` | Filtrar álbumes por género (paginado) |
+| `findTop10ByOrderByIdDesc()` | Últimos 10 álbumes añadidos al catálogo |
+| `findDistribucionPorGenero()` | Distribución de álbumes agrupados por género |
 
 ---
 
@@ -200,6 +247,11 @@ Extiende `JpaRepository<Resena, Long>`.
 | `findByUsuarioId(usuarioId)` | Obtener todas las reseñas de un usuario |
 | `findByUsuarioIdAndAlbumId(usuarioId, albumId)` | Obtener la reseña de un usuario sobre un álbum concreto |
 | `existsByUsuarioIdAndAlbumId(usuarioId, albumId)` | Comprobar si un usuario ya ha reseñado ese álbum |
+| `findTopAlbumesPorPuntuacion(pageable)` | Top álbumes con mejor puntuación media |
+| `findAlbumesMasResenados(pageable)` | Top álbumes con más reseñas |
+| `findTopArtistasPorPuntuacion(pageable)` | Top artistas con mejor puntuación media en sus álbumes |
+| `findTopAlbumesPorGenero(genero, pageable)` | Top álbumes de un género concreto por puntuación |
+| `findTop10ByOrderByFechaCreacionDesc()` | Últimas 10 reseñas escritas |
 
 ---
 
@@ -252,13 +304,15 @@ Cada servicio inyecta su repositorio correspondiente con `@Autowired` y expone m
 
 ### AlbumService ✅
 
+Los métodos de listado aceptan `Pageable` y devuelven `Page<Album>`.
+
 | Método | Descripción |
 |---|---|
-| `obtenerTodos()` | Devuelve todos los álbumes |
+| `obtenerTodos(pageable)` | Devuelve álbumes paginados |
 | `obtenerPorId(id)` | Busca un álbum por ID |
-| `buscarPorTitulo(titulo)` | Búsqueda parcial e insensible a mayúsculas |
-| `obtenerPorArtista(artistaId)` | Filtra álbumes por artista |
-| `obtenerPorGenero(genero)` | Filtra álbumes por género |
+| `buscarPorTitulo(titulo, pageable)` | Búsqueda parcial e insensible a mayúsculas (paginado) |
+| `obtenerPorArtista(artistaId, pageable)` | Filtra álbumes por artista (paginado) |
+| `obtenerPorGenero(genero, pageable)` | Filtra álbumes por género (paginado) |
 | `guardar(album)` | Crea un álbum nuevo |
 | `actualizar(id, datos)` | Actualiza todos los campos del álbum |
 | `eliminar(id)` | Elimina un álbum. Lanza error si no existe |
@@ -277,6 +331,21 @@ Cada servicio inyecta su repositorio correspondiente con `@Autowired` y expone m
 | `eliminar(id)` | Elimina una reseña. Lanza error si no existe |
 
 - **Validación de puntuación:** si se envía un valor fuera del rango 1-5 se lanza una excepción.
+
+---
+
+### EstadisticasService ✅
+
+| Método | Descripción |
+|---|---|
+| `obtenerResumen()` | Devuelve totales globales: álbumes, artistas, reseñas y usuarios |
+| `obtenerTopAlbumes()` | Top 10 álbumes con mejor puntuación media |
+| `obtenerMasResenados()` | Top 10 álbumes con más reseñas |
+| `obtenerTopArtistas()` | Top 10 artistas con mejor puntuación media en sus álbumes |
+| `obtenerDistribucionGeneros()` | Distribución de álbumes por género |
+| `obtenerTopPorGenero(genero)` | Top 10 álbumes de un género concreto |
+| `obtenerActividadReciente()` | Últimas 10 reseñas escritas |
+| `obtenerAlbumesRecientes()` | Últimos 10 álbumes añadidos al catálogo |
 
 ---
 
@@ -334,11 +403,13 @@ Cada método devuelve un `ResponseEntity` para poder controlar el código de est
 
 | Método HTTP | Ruta | Descripción | Respuesta |
 |---|---|---|---|
-| GET | `/api/albumes` | Lista todos los álbumes. Con `?titulo=`, `?genero=` o `?artistaId=` filtra | 200 + lista |
+| GET | `/api/albumes` | Lista álbumes paginados. Con `?titulo=`, `?genero=` o `?artistaId=` filtra. Con `?page=0&size=12` pagina | 200 + Page |
 | GET | `/api/albumes/{id}` | Busca un álbum por ID | 200 o 404 |
 | POST | `/api/albumes` | Crea un álbum nuevo | 200 |
 | PUT | `/api/albumes/{id}` | Actualiza todos los campos del álbum | 200 o 404 |
 | DELETE | `/api/albumes/{id}` | Elimina un álbum | 204 o 404 |
+
+Los resultados se ordenan por título ascendente por defecto. Valores por defecto: `page=0`, `size=12`.
 
 ---
 
@@ -365,6 +436,38 @@ Cada método devuelve un `ResponseEntity` para poder controlar el código de est
 | GET | `/api/favoritos/existe?usuarioId=&albumId=` | Comprueba si un álbum es favorito | 200 + true/false |
 | POST | `/api/favoritos` | Añade un álbum a favoritos | 200 o 400 si ya existe |
 | DELETE | `/api/favoritos?usuarioId=&albumId=` | Elimina un álbum de favoritos | 204 o 404 |
+
+---
+
+### EstadisticasController ✅
+**Ruta base:** `/api/estadisticas`
+
+Todos los endpoints son públicos (sin autenticación).
+
+| Método HTTP | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| GET | `/api/estadisticas/resumen` | Totales globales: álbumes, artistas, reseñas y usuarios | 200 + ResumenDTO |
+| GET | `/api/estadisticas/top-albumes` | Top 10 álbumes con mejor puntuación media | 200 + lista |
+| GET | `/api/estadisticas/mas-resenados` | Top 10 álbumes con más reseñas | 200 + lista |
+| GET | `/api/estadisticas/top-artistas` | Top 10 artistas con mejor puntuación media | 200 + lista |
+| GET | `/api/estadisticas/generos` | Distribución de álbumes por género | 200 + lista |
+| GET | `/api/estadisticas/top-por-genero?genero=` | Top 10 álbumes de un género concreto | 200 + lista |
+| GET | `/api/estadisticas/actividad-reciente` | Últimas 10 reseñas escritas | 200 + lista |
+| GET | `/api/estadisticas/albumes-recientes` | Últimos 10 álbumes añadidos al catálogo | 200 + lista |
+
+---
+
+### AuthController ✅
+**Ruta base:** `/api/auth`
+
+Gestiona el registro y login. Rutas públicas — no requieren token JWT.
+
+| Método HTTP | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| POST | `/api/auth/register` | Registra un nuevo usuario. Hashea contraseña con BCrypt y devuelve token JWT | 200 + token, o 400 JSON si email/username ya existen |
+| POST | `/api/auth/login` | Autentica al usuario y actualiza `fechaUltimoLogin` | 200 + token, o 401/403 |
+
+- Las validaciones de duplicado las gestiona `UsuarioService` (lanza `ReglaNegocioException` → `GlobalExceptionHandler` → JSON uniforme con status 400).
 
 ---
 
@@ -416,6 +519,28 @@ Ver proceso completo de importación en `docs/importacion/proceso_importacion.md
 
 ---
 
+## Tests unitarios ✅
+
+Tests escritos con **JUnit 5 + Mockito**. No arrancan Spring ni conectan a la BD — usan mocks para simular los repositorios.
+
+Ejecutar desde `backend/backend/`:
+```bash
+mvnw.cmd test
+```
+
+| Clase de test | Servicio probado | Nº tests | Casos cubiertos |
+|---|---|---|---|
+| `ResenaServiceTest` | `ResenaService` | 11 | Puntuación inválida (0, 6), reseña duplicada, crear/actualizar/eliminar correctos, consultas |
+| `UsuarioServiceTest` | `UsuarioService` | 7 | Email duplicado, username duplicado, actualizar/eliminar correctos e inexistentes |
+| `FavoritoServiceTest` | `FavoritoService` | 7 | Favorito duplicado, eliminar inexistente, esFavorito, obtenerPorUsuario |
+| `ArtistaServiceTest` | `ArtistaService` | 7 | Actualizar/eliminar correctos e inexistentes, buscarPorNombre, obtenerPorId |
+| `EstadisticasServiceTest` | `EstadisticasService` | 5 | Totales del resumen, distribución de géneros, listas vacías sin reseñas |
+| `BackendApplicationTests` | Contexto Spring | 1 | Carga correcta del contexto de aplicación (requiere BD activa) |
+
+**Total: 38 tests**
+
+---
+
 ## Seguridad y Autenticación ✅
 
 Implementada con **Spring Security + JWT (jjwt 0.12.6) + BCrypt**.
@@ -436,6 +561,17 @@ Authorization: Bearer <token>
 - `ADMIN` — puede además crear/editar/borrar artistas, álbumes e importar desde Spotify
 
 Ver documentación completa en `docs/seguridad_autenticacion.md`.
+
+---
+
+## Optimizaciones finales ✅ (20/04/2026)
+
+- **`password` nunca expuesta** — `@JsonProperty(WRITE_ONLY)` + `@JsonAutoDetect` en `Usuario`. El hash BCrypt no aparece en ninguna respuesta JSON.
+- **`fechaUltimoLogin` correctamente guardada** — nuevo método `UsuarioService.actualizarUltimoLogin()` usado en `AuthController.login`. Antes, `actualizar()` solo copiaba username/foto/bio y el campo se perdía.
+- **CORS configurado** — `SecurityConfig` expone `http://localhost:5173` para el frontend React.
+- **Constructor injection en `security/`** — `UserDetailsServiceImpl` y `JwtFilter` migrados de `@Autowired` en campo a `@RequiredArgsConstructor`.
+- **404 con body JSON en GET por ID** — todos los controllers usan `orElseThrow(RecursoNoEncontradoException)` en lugar de `orElse(notFound().build())`.
+- **400 con body JSON en `GET /api/resenas`** sin parámetros — lanza `ReglaNegocioException` en lugar de devolver `badRequest().build()` vacío.
 
 ---
 

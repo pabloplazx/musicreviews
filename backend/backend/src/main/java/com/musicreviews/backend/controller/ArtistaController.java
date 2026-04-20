@@ -1,5 +1,6 @@
 package com.musicreviews.backend.controller;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Artista;
 import com.musicreviews.backend.service.ArtistaService;
 import lombok.RequiredArgsConstructor;
@@ -27,12 +28,11 @@ public class ArtistaController {
         return artistaService.obtenerTodos();
     }
 
-    // GET /api/artistas/{id} → busca un artista por su ID. 404 si no existe.
+    // GET /api/artistas/{id} → busca un artista por su ID. 404 JSON si no existe.
     @GetMapping("/{id}")
     public ResponseEntity<Artista> obtenerPorId(@PathVariable Long id) {
-        return artistaService.obtenerPorId(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(artistaService.obtenerPorId(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Artista no encontrado")));
     }
 
     // POST /api/artistas → crea un artista nuevo. Solo accesible por ADMIN (SecurityConfig).
@@ -44,21 +44,13 @@ public class ArtistaController {
     // PUT /api/artistas/{id} → actualiza todos los campos de un artista. 404 si no existe.
     @PutMapping("/{id}")
     public ResponseEntity<Artista> actualizar(@PathVariable Long id, @RequestBody Artista datos) {
-        try {
-            return ResponseEntity.ok(artistaService.actualizar(id, datos));
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        return ResponseEntity.ok(artistaService.actualizar(id, datos));
     }
 
     // DELETE /api/artistas/{id} → elimina un artista. 204 si ok, 404 si no existe.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        try {
-            artistaService.eliminar(id);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        artistaService.eliminar(id);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -1,11 +1,14 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
+import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -42,10 +45,10 @@ public class UsuarioService {
     @Transactional
     public Usuario guardar(Usuario usuario) {
         if (usuarioRepository.existsByEmail(usuario.getEmail())) {
-            throw new RuntimeException("Ya existe un usuario con ese email");
+            throw new ReglaNegocioException("Ya existe un usuario con ese email");
         }
         if (usuarioRepository.existsByUsername(usuario.getUsername())) {
-            throw new RuntimeException("Ya existe un usuario con ese username");
+            throw new ReglaNegocioException("Ya existe un usuario con ese username");
         }
         return usuarioRepository.save(usuario);
     }
@@ -53,7 +56,7 @@ public class UsuarioService {
     @Transactional
     public Usuario actualizar(Long id, Usuario datosActualizados) {
         Usuario usuario = usuarioRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
 
         usuario.setUsername(datosActualizados.getUsername());
         usuario.setFotoPerfil(datosActualizados.getFotoPerfil());
@@ -63,9 +66,17 @@ public class UsuarioService {
     }
 
     @Transactional
+    public void actualizarUltimoLogin(Long id) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+        usuario.setFechaUltimoLogin(LocalDateTime.now());
+        usuarioRepository.save(usuario);
+    }
+
+    @Transactional
     public void eliminar(Long id) {
         if (!usuarioRepository.existsById(id)) {
-            throw new RuntimeException("Usuario no encontrado");
+            throw new RecursoNoEncontradoException("Usuario no encontrado");
         }
         usuarioRepository.deleteById(id);
     }

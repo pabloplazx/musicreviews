@@ -24,13 +24,17 @@ Base URL: `http://localhost:8080`
 | Método | Ruta | Body | Resultado |
 |---|---|---|---|
 | POST | `/api/albumes` | `{ "titulo": "OK Computer", "portada": "https://...", "fechaLanzamiento": "1997-05-21", "genero": "Rock", "descripcion": "...", "artista": { "id": 1 } }` | 200 ✅ |
-| GET | `/api/albumes` | — | 200 + lista ✅ |
+| GET | `/api/albumes` | — | 200 + Page (12 álbumes, totalElements 469, totalPages 40) ✅ |
+| GET | `/api/albumes?page=1&size=12` | — | 200 + Page página 2 ✅ |
+| GET | `/api/albumes?titulo=the&page=0&size=5` | — | 200 + Page filtrada paginada ✅ |
+| GET | `/api/albumes?artistaId=37&page=0` | — | 200 + Page filtrada por artista ✅ |
 | GET | `/api/albumes/3` | — | 200 + álbum ✅ |
 | GET | `/api/albumes?titulo=ok` | — | 200 + lista filtrada ✅ |
-| GET | `/api/albumes?artistaId=1` | — | 200 + lista filtrada ✅ |
 | GET | `/api/albumes?genero=Rock` | — | 200 + lista filtrada ✅ |
 | PUT | `/api/albumes/3` | campos actualizados | 200 ✅ |
 | DELETE | `/api/albumes/{id}` | — | 204 ✅ |
+
+**Nota:** La respuesta de listado ahora es un objeto `Page` con `content` (álbumes), `page.totalElements`, `page.totalPages` y `page.number`. Valores por defecto: `page=0`, `size=12`, ordenado por título ascendente.
 
 ---
 
@@ -147,13 +151,121 @@ Credencial Last.fm almacenada en `application.properties` como `lastfm.api-key`.
 
 ---
 
+## EstadisticasController ✅
+
+| Método | Ruta | Params | Resultado |
+|---|---|---|---|
+| GET | `/api/estadisticas/resumen` | — | 200 + `{ totalAlbumes: 469, totalArtistas: 99, totalResenas: N, totalUsuarios: N }` ✅ |
+| GET | `/api/estadisticas/generos` | — | 200 + lista de géneros con total de álbumes ✅ |
+| GET | `/api/estadisticas/top-albumes` | — | 200 + top 10 álbumes por puntuación media ✅ |
+| GET | `/api/estadisticas/mas-resenados` | — | 200 + top 10 álbumes por número de reseñas ✅ |
+| GET | `/api/estadisticas/top-artistas` | — | 200 + top 10 artistas por puntuación media ✅ |
+| GET | `/api/estadisticas/top-por-genero` | `?genero=hip-hop` | 200 + top 10 álbumes del género ✅ |
+| GET | `/api/estadisticas/actividad-reciente` | — | 200 + últimas 10 reseñas ✅ |
+| GET | `/api/estadisticas/albumes-recientes` | — | 200 + últimos 10 álbumes añadidos ✅ |
+
+**Nota:** Los endpoints de ranking (`top-albumes`, `top-artistas`, `mas-resenados`) devuelven lista vacía si no hay reseñas suficientes. Se llenarán con datos de ejemplo en fases posteriores.
+
+---
+
+## Optimizaciones finales del backend ✅ (20/04/2026)
+
+Revisión completa antes de arrancar el frontend. Cambios aplicados:
+
+| Fichero | Cambio | Motivo |
+|---|---|---|
+| `Usuario.java` | `@JsonProperty(WRITE_ONLY)` + `@JsonAutoDetect` en `password` | El hash BCrypt ya no se expone en ninguna respuesta JSON |
+| `UsuarioService` | Nuevo método `actualizarUltimoLogin(id)` | `fechaUltimoLogin` no se guardaba — `actualizar()` solo copia username/foto/bio |
+| `AuthController` | Login usa `actualizarUltimoLogin()` en lugar de `actualizar()` | Corrige el bug de `fechaUltimoLogin` |
+| `SecurityConfig` | CORS configurado para `http://localhost:5173` | Sin esto el frontend React no puede llamar a la API |
+| `UserDetailsServiceImpl` | Constructor injection con `@RequiredArgsConstructor` | Consistencia con el resto del proyecto |
+| `JwtFilter` | Constructor injection con `@RequiredArgsConstructor` | Consistencia con el resto del proyecto |
+| `ArtistaController`, `AlbumController`, `UsuarioController`, `ResenaController` | `orElseThrow(RecursoNoEncontradoException)` en GET por ID | Los 404 ahora devuelven JSON uniforme en lugar de respuesta vacía |
+| `ResenaController.obtener` | `throw ReglaNegocioException` si no hay params | El 400 ahora devuelve JSON en lugar de respuesta vacía |
+
+---
+
+## GlobalExceptionHandler — Manejo de errores centralizado ✅
+
+Añadido el 20/04/2026. Antes de este cambio, cada controlador tenía sus propios `try-catch` y los errores podían devolver texto plano o el formato por defecto de Spring. Ahora todos los errores devuelven siempre el mismo formato JSON.
+
+### Formato unificado de error
+
+```json
+{
+  "timestamp": "2026-04-20T11:28:48.659",
+  "status": 404,
+  "mensaje": "Reseña no encontrada"
+}
+```
+
+### Pruebas realizadas con curl (20/04/2026)
+
+| Caso | Petición | Respuesta esperada | Resultado |
+|---|---|---|---|
+| Puntuación inválida | `POST /api/resenas` con `"puntuacion": 10` | 400 + `"La puntuación debe estar entre 1 y 5"` | ✅ |
+| Reseña no encontrada | `DELETE /api/resenas/99999` | 404 + `"Reseña no encontrada"` | ✅ |
+| Favorito duplicado | `POST /api/favoritos` mismo usuario+álbum dos veces | 400 + `"El álbum ya está en favoritos"` | ✅ |
+| Favorito inexistente | `DELETE /api/favoritos?usuarioId=4&albumId=999` | 404 + `"El álbum no está en favoritos"` | ✅ |
+
+### Cambio en respuestas de error anteriores
+
+Las respuestas de error en `ResenaController` y `FavoritoController` que antes devolvían texto plano (`e.getMessage()`) ahora devuelven el JSON uniforme de arriba. Los status HTTP no cambian (400 sigue siendo 400, 404 sigue siendo 404).
+
+---
+
+## AuthController — fix GlobalExceptionHandler ✅
+
+Corregido el 20/04/2026. El endpoint `POST /api/auth/register` devolvía texto plano (`"Ya existe un usuario con ese email"`) en lugar del JSON uniforme del `GlobalExceptionHandler`. Se eliminaron las validaciones inline del controller y se delegan a `UsuarioService`, que ya lanza `ReglaNegocioException`.
+
+| Caso | Antes | Después |
+|---|---|---|
+| Email duplicado en register | `400` + texto plano | `400` + `{"timestamp":"...","status":400,"mensaje":"Ya existe un usuario con ese email"}` |
+| Username duplicado en register | `400` + texto plano | `400` + JSON uniforme |
+
+---
+
+## Datos de ejemplo — `database/seed_data.py` ✅
+
+Script Python ejecutado el 20/04/2026 que puebla la BD usando la API REST.
+
+### Usuarios creados
+
+| username | email | rol |
+|---|---|---|
+| maria_indie | maria@musicreviews.com | USER |
+| carlos_rap | carlos@musicreviews.com | USER |
+| ana_electronica | ana@musicreviews.com | USER |
+| jorge_clasicos | jorge@musicreviews.com | USER |
+| lucia_urban | lucia@musicreviews.com | USER |
+
+### Estado de la BD tras el script (20/04/2026)
+
+| Entidad | Total |
+|---|---|
+| Usuarios | 8 |
+| Álbumes | 469 |
+| Artistas | 99 |
+| Reseñas | 31 |
+
+### Verificación de estadísticas tras cargar datos
+
+| Endpoint | Resultado |
+|---|---|
+| `GET /api/estadisticas/resumen` | `totalResenas: 31, totalUsuarios: 8` ✅ |
+| `GET /api/estadisticas/top-albumes` | Top 5 con puntuaciones reales (4:44, El Mal Querer, Random Access Memories...) ✅ |
+
+---
+
 ## Resumen general
 
 | Controlador | Endpoints probados | Bugs encontrados | Estado |
 |---|---|---|---|
 | ArtistaController | 7 | 0 | ✅ |
-| AlbumController | 8 | 0 | ✅ |
+| AlbumController | 10 | 0 | ✅ |
 | UsuarioController | 7 | 0 | ✅ |
 | ResenaController | 8 | 2 | ✅ (corregidos) |
 | FavoritoController | 6 | 3 | ✅ (corregidos) |
 | SpotifyController | 4 | 3 | ✅ (corregidos) |
+| EstadisticasController | 8 | 0 | ✅ |
+| GlobalExceptionHandler | 4 | 0 | ✅ |

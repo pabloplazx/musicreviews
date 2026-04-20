@@ -1,0 +1,127 @@
+package com.musicreviews.backend.service;
+
+import com.musicreviews.backend.model.Usuario;
+import com.musicreviews.backend.repository.UsuarioRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+// Esto prueba la lógica de negocio de UsuarioService de forma aislada, sin BD ni Spring.
+@ExtendWith(MockitoExtension.class)
+class UsuarioServiceTest {
+
+    // Mock del repositorio — simula la BD sin conectarse a ella.
+    @Mock
+    private UsuarioRepository usuarioRepository;
+
+    // Servicio real con el mock inyectado en lugar del repositorio real.
+    @InjectMocks
+    private UsuarioService usuarioService;
+
+    private Usuario usuario;
+
+    // Esto prepara el objeto de prueba antes de cada test.
+    @BeforeEach
+    void setUp() {
+        usuario = new Usuario();
+        usuario.setId(1L);
+        usuario.setEmail("pablo@test.com");
+        usuario.setUsername("pablo");
+        usuario.setBio("Bio de prueba");
+    }
+
+    // --- TESTS DE guardar() ---
+
+    // Esto verifica que un usuario con datos únicos se guarda correctamente.
+    @Test
+    void guardar_conDatosUnicos_guardaYDevuelveUsuario() {
+        when(usuarioRepository.existsByEmail("pablo@test.com")).thenReturn(false);
+        when(usuarioRepository.existsByUsername("pablo")).thenReturn(false);
+        when(usuarioRepository.save(usuario)).thenReturn(usuario);
+
+        Usuario resultado = usuarioService.guardar(usuario);
+
+        assertNotNull(resultado);
+        assertEquals("pablo@test.com", resultado.getEmail());
+        verify(usuarioRepository).save(usuario);
+    }
+
+    // Esto verifica que registrar un email ya existente lanza excepción.
+    @Test
+    void guardar_conEmailDuplicado_lanzaExcepcion() {
+        when(usuarioRepository.existsByEmail("pablo@test.com")).thenReturn(true);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> usuarioService.guardar(usuario));
+        assertEquals("Ya existe un usuario con ese email", ex.getMessage());
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    // Esto verifica que registrar un username ya existente lanza excepción.
+    @Test
+    void guardar_conUsernameDuplicado_lanzaExcepcion() {
+        when(usuarioRepository.existsByEmail("pablo@test.com")).thenReturn(false);
+        when(usuarioRepository.existsByUsername("pablo")).thenReturn(true);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> usuarioService.guardar(usuario));
+        assertEquals("Ya existe un usuario con ese username", ex.getMessage());
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    // --- TESTS DE actualizar() ---
+
+    // Esto verifica que actualizar un usuario existente modifica sus campos correctamente.
+    @Test
+    void actualizar_conIdExistente_actualizaCampos() {
+        Usuario datosNuevos = new Usuario();
+        datosNuevos.setUsername("pablo_nuevo");
+        datosNuevos.setFotoPerfil("foto.jpg");
+        datosNuevos.setBio("Nueva bio");
+
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.save(usuario)).thenReturn(usuario);
+
+        Usuario resultado = usuarioService.actualizar(1L, datosNuevos);
+
+        assertEquals("pablo_nuevo", resultado.getUsername());
+        assertEquals("Nueva bio", resultado.getBio());
+    }
+
+    // Esto verifica que actualizar un usuario que no existe lanza excepción.
+    @Test
+    void actualizar_conIdInexistente_lanzaExcepcion() {
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.empty());
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> usuarioService.actualizar(99L, usuario));
+        assertEquals("Usuario no encontrado", ex.getMessage());
+    }
+
+    // --- TESTS DE eliminar() ---
+
+    // Esto verifica que eliminar un usuario existente llama a deleteById.
+    @Test
+    void eliminar_conIdExistente_eliminaCorrectamente() {
+        when(usuarioRepository.existsById(1L)).thenReturn(true);
+
+        usuarioService.eliminar(1L);
+
+        verify(usuarioRepository).deleteById(1L);
+    }
+
+    // Esto verifica que eliminar un usuario inexistente lanza excepción.
+    @Test
+    void eliminar_conIdInexistente_lanzaExcepcion() {
+        when(usuarioRepository.existsById(99L)).thenReturn(false);
+
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> usuarioService.eliminar(99L));
+        assertEquals("Usuario no encontrado", ex.getMessage());
+        verify(usuarioRepository, never()).deleteById(any());
+    }
+}

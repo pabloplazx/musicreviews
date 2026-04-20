@@ -11,8 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-
 // Esta clase expone los endpoints de autenticación: registro y login.
 // No requiere token JWT — son las rutas de entrada al sistema.
 @RestController
@@ -28,15 +26,9 @@ public class AuthController {
 
     // POST /api/auth/register → registra un nuevo usuario.
     // La contraseña se hashea con BCrypt antes de guardarla.
+    // Las validaciones de duplicado las gestiona UsuarioService (lanza ReglaNegocioException → 400).
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
-        if (usuarioService.obtenerPorEmail(request.getEmail()).isPresent()) {
-            return ResponseEntity.badRequest().body("Ya existe un usuario con ese email");
-        }
-        if (usuarioService.obtenerPorUsername(request.getUsername()).isPresent()) {
-            return ResponseEntity.badRequest().body("Ya existe un usuario con ese username");
-        }
-
+    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
         Usuario usuario = new Usuario();
         usuario.setUsername(request.getUsername());
         usuario.setEmail(request.getEmail());
@@ -62,8 +54,7 @@ public class AuthController {
             return ResponseEntity.status(403).body("Cuenta desactivada");
         }
 
-        usuario.setFechaUltimoLogin(LocalDateTime.now());
-        usuarioService.actualizar(usuario.getId(), usuario);
+        usuarioService.actualizarUltimoLogin(usuario.getId());
 
         String token = jwtUtil.generarToken(usuario.getEmail(), usuario.getRol().name());
         return ResponseEntity.ok(new AuthResponse(token, usuario.getId(), usuario.getUsername(), usuario.getEmail(), usuario.getRol().name()));

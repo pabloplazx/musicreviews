@@ -1,5 +1,7 @@
 package com.musicreviews.backend.controller;
 
+import com.musicreviews.backend.exception.RecursoNoEncontradoException;
+import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.service.ResenaService;
 import lombok.RequiredArgsConstructor;
@@ -26,46 +28,33 @@ public class ResenaController {
 
         if (albumId != null) return ResponseEntity.ok(resenaService.obtenerPorAlbum(albumId));
         if (usuarioId != null) return ResponseEntity.ok(resenaService.obtenerPorUsuario(usuarioId));
-        return ResponseEntity.badRequest().build();
+        throw new ReglaNegocioException("Se requiere albumId o usuarioId como parámetro");
     }
 
     // GET /api/resenas/usuario/{usuarioId}/album/{albumId} → reseña concreta de un usuario sobre un álbum.
     @GetMapping("/usuario/{usuarioId}/album/{albumId}")
     public ResponseEntity<Resena> obtenerPorUsuarioYAlbum(
             @PathVariable Long usuarioId, @PathVariable Long albumId) {
-        return resenaService.obtenerPorUsuarioYAlbum(usuarioId, albumId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(resenaService.obtenerPorUsuarioYAlbum(usuarioId, albumId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Reseña no encontrada")));
     }
 
     // POST /api/resenas → crea una reseña. Valida puntuación (1-5) y que no exista duplicado.
     @PostMapping
-    public ResponseEntity<Object> crear(@RequestBody Resena resena) {
-        try {
-            return ResponseEntity.ok(resenaService.crear(resena));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public ResponseEntity<Resena> crear(@RequestBody Resena resena) {
+        return ResponseEntity.ok(resenaService.crear(resena));
     }
 
-    // PUT /api/resenas/{id} → actualiza puntuación y comentario. 400 si puntuación inválida.
+    // PUT /api/resenas/{id} → actualiza puntuación y comentario. 400 si puntuación inválida, 404 si no existe.
     @PutMapping("/{id}")
-    public ResponseEntity<Object> actualizar(@PathVariable Long id, @RequestBody Resena datos) {
-        try {
-            return ResponseEntity.ok(resenaService.actualizar(id, datos));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+    public ResponseEntity<Resena> actualizar(@PathVariable Long id, @RequestBody Resena datos) {
+        return ResponseEntity.ok(resenaService.actualizar(id, datos));
     }
 
     // DELETE /api/resenas/{id} → elimina una reseña. 204 si ok, 404 si no existe.
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        try {
-            resenaService.eliminar(id);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        resenaService.eliminar(id);
+        return ResponseEntity.noContent().build();
     }
 }
