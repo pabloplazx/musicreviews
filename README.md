@@ -31,6 +31,8 @@ MusicReviews_TFG/
 │       │   ├── dto/              ← Objetos de transferencia (register, login, auth response)
 │       │   ├── SecurityConfig.java
 │       │   └── README.md         ← Documentación completa de la API
+│       ├── src/test/java/com/musicreviews/backend/
+│       │   └── service/          ← 37 tests unitarios (JUnit 5 + Mockito)
 │       └── src/main/resources/
 │           └── application.properties.example
 ├── database/
@@ -41,6 +43,7 @@ MusicReviews_TFG/
     ├── diagrama_bd_nuevo.png
     ├── diagrama_clases.png
     ├── diagrama_casos_uso.png
+    ├── tests_unitarios.md        ← Documentación completa de los 38 tests unitarios
     ├── pruebas_postman.md        ← Registro de pruebas y bugs resueltos
     ├── migracion_aiven.md        ← Proceso de migración de BD local a Aiven (MySQL cloud)
     ├── seguridad_autenticacion.md ← JWT, BCrypt, CORS y protección de contraseñas
