@@ -144,6 +144,7 @@ Todos los endpoints devuelven errores en formato JSON uniforme gracias al `Globa
 ## Documentación
 
 - **API REST completa:** `backend/backend/src/main/java/com/musicreviews/backend/README.md`
+- **Tests unitarios:** `docs/tests_unitarios.md`
 - **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
 - **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
 - **Migración de la BD a Aiven:** `docs/migracion_aiven.md`

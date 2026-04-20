@@ -54,7 +54,7 @@ public class AlbumService {
     @Transactional
     public Album actualizar(Long id, Album datosActualizados) {
         Album album = albumRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Álbum no encontrado"));
+                .orElseThrow(() -> new RecursoNoEncontradoException("Álbum no encontrado"));
 
         album.setTitulo(datosActualizados.getTitulo());
         album.setPortada(datosActualizados.getPortada());

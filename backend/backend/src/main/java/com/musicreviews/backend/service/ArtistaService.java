@@ -42,7 +42,7 @@ public class ArtistaService {
     @Transactional
     public Artista actualizar(Long id, Artista datosActualizados) {
         Artista artista = artistaRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Artista no encontrado"));
+                .orElseThrow(() -> new RecursoNoEncontradoException("Artista no encontrado"));
 
         artista.setNombre(datosActualizados.getNombre());
         artista.setFoto(datosActualizados.getFoto());
