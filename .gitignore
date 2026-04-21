@@ -12,32 +12,41 @@ target/
 # Logs
 *.log
 
-# Variables de entorno
-.env
-
 # Sistema operativo
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Configuración local con credenciales (contiene passwords de BD, JWT secret y claves API)
+# Credenciales y configuración local (passwords de BD, JWT secret, claves API)
 backend/backend/src/main/resources/application.properties
+application.properties.local
 
 # Variables de entorno con secretos
+.env
 *.env
 .env.local
+.env.development
 .env.production
 
-# Claves y certificados
+# Claves, tokens y certificados
 *.pem
 *.key
 *.p12
 *.jks
+*token*.txt
+*secret*.txt
+*credentials*.json
+*api_key*
 
 # Uploads de usuarios (se generan en runtime)
 backend/backend/uploads/
 
-# Claude Code
-CLAUDE.md
-
-# Datos de importación (CSV con datos personales de Spotify)
+# Datos de importación con datos externos
 docs/importacion/*.csv
+docs/importacion/*.txt
+
+# Herramientas de desarrollo y asistencia (no forman parte del proyecto)
+CLAUDE.md
+.claude/
+*.claude
+claude.txt
