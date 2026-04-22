@@ -72,13 +72,15 @@ La lista final tiene **108 artistas**.
 
 ## Paso 4 — Importar desde el backend
 
-El backend expone tres endpoints de importación en `/api/spotify/`:
+El backend expone varios endpoints de importación y diagnóstico en `/api/spotify/`:
 
 | Endpoint | Descripción |
 |---|---|
-| `GET /api/spotify/importar?artista=Radiohead` | Importa un artista concreto por nombre |
+| `GET /api/spotify/importar?artista=Radiohead` | Importa un artista concreto por nombre. Diferencia alta, actualización y "ya al día" en el mensaje |
 | `GET /api/spotify/importar-lista` | Importa la lista completa de 108 artistas curados |
 | `GET /api/spotify/importar-playlist?id=...` | Importa artistas desde una playlist pública *(requiere OAuth desde 2024)* |
+| `GET /api/spotify/comprobar?artista=Radiohead` | **Diagnóstico** (no modifica BD): compara álbumes del artista en BD vs Spotify y devuelve los que faltan |
+| `GET /api/spotify/completar-todos` | Recorre todos los artistas de la BD y añade los álbumes que faltaran en Spotify |
 | `GET /api/spotify/actualizar-metadatos` | Rellena género (Spotify) y biografía (Last.fm) de artistas que los tengan vacíos |
 | `GET /api/spotify/actualizar-portadas` | Busca en Spotify la portada de cada álbum que la tenga vacía y la actualiza |
 
@@ -87,7 +89,7 @@ El backend expone tres endpoints de importación en `/api/spotify/`:
 1. Para cada artista de la lista, comprueba primero en la BD si ya existe con álbumes → si sí, lo salta sin llamar a Spotify
 2. Si no existe o existe sin álbumes, busca el artista en Spotify (`/v1/search`)
 3. Obtiene los datos completos del artista (`/v1/artists/{id}`)
-4. Obtiene sus álbumes de estudio (`/v1/artists/{id}/albums?include_groups=album`)
+4. Obtiene sus álbumes de estudio (`/v1/artists/{id}/albums?include_groups=album`) **paginando por el campo `next`** hasta agotar todas las páginas (añadido el 21/04/2026 — ver Bug "Paginación" abajo)
 5. Guarda el artista y sus álbumes en MySQL
 6. Espera 500ms entre artistas para no superar el límite de Spotify
 
@@ -113,6 +115,10 @@ Backend → GET https://api.spotify.com/v1/...
 | `429 Too Many Requests` | Demasiadas peticiones seguidas a la API | Añadir delay de 500ms entre cada artista |
 | Artistas guardados sin álbumes | Rate limit cortaba la importación a mitad | Lógica que detecta artistas sin álbumes y reintenta solo esos |
 | Duplicados al reimportar | Al relanzar el endpoint se volvían a guardar artistas ya existentes | Comprobar en BD antes de llamar a Spotify |
+| **[21/04/2026] Regresión `400 Invalid limit`** | En algún punto se reintrodujo `limit=50` en `/v1/artists/{id}/albums` | Volver a eliminar el parámetro y añadir comentario en el código para que no se re-introduzca |
+| **[21/04/2026] Álbumes perdidos por falta de paginación** | `importarArtistaPorId` solo leía la primera página; Spotify divide la discografía en varias páginas incluso por debajo del default de 20. Radiohead tenía 6/15 álbumes en BD | Seguir el campo `next` hasta `null` en el bucle de álbumes (mismo patrón que ya usaba `importarDesdePlaylist`) |
+| **[21/04/2026] Mensaje "0 álbumes nuevos" sin contexto** | `importarArtista` devolvía el mismo mensaje tanto si el artista era nuevo como si estaba al día | Diferenciar 3 mensajes: `"Importado: X con N álbumes"`, `"Actualizado: X con N álbumes nuevos"`, `"X ya está al día. No hay álbumes nuevos en Spotify"` |
+| **[21/04/2026] `spotifyGet` dormía 24h ante cuota diaria** | El header `Retry-After` puede valer ≈86400s cuando se agota la cuota diaria; el método lo respetaba ciegamente | Añadir `MAX_ESPERA_RATE_LIMIT = 300s`. Por encima de ese valor se aborta con mensaje explícito |
 
 ---
 
