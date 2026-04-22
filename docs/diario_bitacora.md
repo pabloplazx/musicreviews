@@ -204,3 +204,42 @@ src/
 - Entorno configurado y funcionando ✅
 - Estructura de carpetas creada ✅
 - Diseño Figma pendiente ⏳
+
+---
+
+## Semana 7 — Corrección de la importación desde Spotify (21/04/2026)
+
+**Fase:** vuelta puntual a FASE 2 para arreglar regresiones detectadas al intentar añadir artistas nuevos.
+
+### Punto de partida
+- 469 álbumes / 99 artistas en Aiven.
+- `GET /api/spotify/importar?artista=...` devolvía 500 con error `400 Invalid limit` de Spotify.
+
+### Problemas detectados y solucionados
+
+1. **Regresión del parámetro `limit=50`** (Bug 4 en `pruebas_postman.md`). Ya había sido corregido en Semana 4 pero se había reintroducido. Eliminado de nuevo y comentario añadido en el código para evitar que vuelva a aparecer.
+2. **Falta de paginación en `/v1/artists/{id}/albums`** (Bug 5). Detectado al añadir el endpoint nuevo `/api/spotify/comprobar`: Radiohead tenía 6 álbumes en BD pero Spotify listaba 15. `importarArtistaPorId` solo leía la primera página. Solucionado siguiendo el campo `next` igual que `importarDesdePlaylist`.
+3. **Mensaje confuso "0 álbumes nuevos"** (Bug 3 revisado). La solución anterior cortocircuitaba Spotify si el artista ya existía, impidiendo detectar lanzamientos nuevos. Sustituida por 3 mensajes diferenciados: `Importado` / `Actualizado` / `ya está al día`.
+4. **`spotifyGet` se quedaba dormido 24 h ante cuota diaria** (Bug 6). El método respetaba ciegamente `Retry-After`; al agotar la cuota diaria Spotify responde con ≈86400 s. Añadido tope `MAX_ESPERA_RATE_LIMIT = 300 s` con abort explícito.
+
+### Endpoints nuevos
+
+- **`GET /api/spotify/comprobar?artista=`** — diagnóstico puro, no modifica BD. Responde `{artista, totalEnBd, totalEnSpotify, faltan[]}`.
+- **`GET /api/spotify/completar-todos`** — recorre todos los artistas de la BD y añade los álbumes que faltaban en Spotify (aprovechando la paginación nueva). No crea artistas nuevos.
+
+### Ejecución y resultado
+
+- `/completar-todos` procesó 26 de los 99 artistas antes de que Spotify devolviera el 429 con cuota diaria agotada. **+204 álbumes nuevos añadidos**. Artistas que más contribuyeron: Pink Floyd (+20), The Beatles (+16), Yung Beef (+16), $uicideboy$ (+16), Kanye West (+14), Drake (+13), Mac DeMarco (+12), The Weeknd (+10), Radiohead (+9), Tyler The Creator (+8), Daft Punk (+8).
+- Detectados 3 artistas "zombie" con 0 álbumes (Mitski, Japanese Breakfast, SX3) — restos de intentos previos cuando el bug del `limit=50` cortaba la importación después de crear el artista pero antes de guardar álbumes. SX3 eliminado por ser un match erróneo. Mitski y Japanese Breakfast pendientes de repoblar con el nuevo flujo.
+
+### Estado final del día
+
+- 673 álbumes / 102 artistas.
+- Spotify bloqueado por cuota diaria hasta el día siguiente.
+- Pendientes: repoblar Mitski y Japanese Breakfast; completar los 73 artistas restantes de `/completar-todos` (probablemente en 2-3 sesiones por la cuota diaria).
+
+### Documentación actualizada
+
+- `backend/backend/src/main/java/com/musicreviews/backend/README.md` — nuevos endpoints y métodos del `SpotifyService`.
+- `docs/pruebas_postman.md` — Bugs 4, 5, 6 y nuevas filas de pruebas.
+- `docs/importacion/proceso_importacion.md` — tabla de problemas ampliada y nuevos endpoints.

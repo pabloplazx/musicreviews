@@ -118,8 +118,12 @@ Base URL: `http://localhost:8080/api/spotify`
 | Método | Ruta | Params | Resultado |
 |---|---|---|---|
 | GET | `/api/spotify/importar` | `?artista=Fangoria` | 200 + `"Importado: Fangoria con 8 álbumes."` ✅ |
-| GET | `/api/spotify/importar` | `?artista=Arctic Monkeys` | 200 + `"Arctic Monkeys ya existe en la base de datos con álbumes importados."` ✅ |
+| GET | `/api/spotify/importar` | `?artista=Beach House` (artista nuevo) | 200 + `"Importado: Beach House con 5 álbumes."` ✅ |
+| GET | `/api/spotify/importar` | `?artista=Radiohead` (al día) | 200 + `"Radiohead ya está al día. No hay álbumes nuevos en Spotify."` ✅ |
+| GET | `/api/spotify/importar` | `?artista=Radiohead` (con nuevos) | 200 + `"Actualizado: Radiohead con 9 álbumes nuevos."` ✅ |
 | GET | `/api/spotify/importar-lista` | — | 200 + resumen con totales ✅ |
+| GET | `/api/spotify/comprobar` | `?artista=Radiohead` | 200 + JSON con `totalEnBd`, `totalEnSpotify` y lista `faltan` ✅ |
+| GET | `/api/spotify/completar-todos` | — | 200 + `"Completado: N álbumes nuevos en M artistas (...)."` ✅ |
 | GET | `/api/spotify/actualizar-metadatos` | — | 200 + `"Metadatos actualizados para N artistas."` ✅ |
 
 ### Bugs encontrados y corregidos
@@ -138,7 +142,33 @@ Base URL: `http://localhost:8080/api/spotify`
 **Bug 3 — Mensaje confuso al reimportar artista ya existente**
 - **Síntoma:** `GET /importar?artista=Arctic Monkeys` devolvía `"Importado: Arctic Monkeys con 0 álbumes."` cuando ya existía.
 - **Causa:** `importarArtistaPorId` devolvía 0 al detectar duplicado, y el mensaje no distinguía entre "importado con 0 álbumes" y "omitido por ya existir".
-- **Solución:** Añadir comprobación previa en `importarArtista` antes de llamar a `importarArtistaPorId`. Si el artista ya existe con álbumes, se devuelve directamente el mensaje `"X ya existe en la base de datos con álbumes importados."`.
+- **Solución (revisada el 21/04/2026):** En lugar de cortocircuitar cuando el artista ya existe (lo que impediría detectar álbumes nuevos en lanzamientos futuros), `importarArtista` ahora diferencia tres mensajes:
+  - `"Importado: X con N álbumes."` — artista nuevo en la BD.
+  - `"Actualizado: X con N álbumes nuevos."` — existía y se han añadido álbumes nuevos.
+  - `"X ya está al día. No hay álbumes nuevos en Spotify."` — existía y no hay nada nuevo.
+- De este modo `/importar?artista=Radiohead` sigue siendo útil cuando Radiohead publica un disco nuevo.
+
+**Bug 4 — Regresión: `400 Invalid limit` al obtener álbumes (21/04/2026)**
+- **Síntoma:** `GET /importar?artista=Beach House` devolvía 500 con `"Error al importar: Error Spotify álbumes: {\"error\":{\"status\":400,\"message\":\"Invalid limit\"}}"`.
+- **Causa:** El parámetro `limit=50` en `/v1/artists/{id}/albums` (ya documentado como bug en Semana 4 y "arreglado" en su día) había sido reintroducido en el código. Spotify lo rechaza aunque su documentación oficial indique que acepta 1–50.
+- **Solución:** Eliminar `queryParam("limit", ...)` y dejar el default de Spotify (20 por página). Añadido comentario en el código advirtiendo de la regresión.
+
+**Bug 5 — Sin paginación, se perdían álbumes de artistas prolíficos (21/04/2026)**
+- **Síntoma:** `GET /importar?artista=Radiohead` devolvía `"Radiohead ya está al día"` cuando en realidad faltaban 9 álbumes clásicos (*Pablo Honey*, *The Bends*, *Kid A*, *Amnesiac*, *Hail to the Thief*, *In Rainbows*, *The King of Limbs*, *I Might Be Wrong*). Detectado gracias al nuevo endpoint `/comprobar`, que comparaba 6 en BD vs 15 en Spotify.
+- **Causa:** `importarArtistaPorId` solo leía la primera página de `/v1/artists/{id}/albums`. Spotify divide los resultados en varias páginas incluso por debajo del default de 20 (probablemente por el `market` implícito) y expone la URL siguiente en el campo `next`.
+- **Solución:** Añadir paginación al bucle de álbumes: seguir el `next` hasta que sea `null`, exactamente igual que ya hacía `importarDesdePlaylist`. Dedup por título en minúsculas para no duplicar si un álbum aparece en varias páginas. Verificación post-fix: Radiohead pasó de 6 a 15 álbumes.
+
+**Bug 6 — `spotifyGet` bloqueaba el proceso 24h ante cuota diaria (21/04/2026)**
+- **Síntoma:** Durante `/completar-todos` Spotify devolvió un 429 con `Retry-After: 84687` (≈23.5 h, cuota diaria agotada). `spotifyGet` respetaba ese valor y dormía el hilo casi 24 horas dejando el backend colgado.
+- **Causa:** El método confiaba ciegamente en el header `Retry-After` sin distinguir entre un rate limit normal (segundos-minutos) y una cuota diaria (horas).
+- **Solución:** Añadir `MAX_ESPERA_RATE_LIMIT = 300` (5 min). Si `Retry-After` lo supera, se aborta con `"Spotify: cuota superada (Retry-After Ns ≈ Xh). Reintenta más tarde."`. Para rate limits normales el comportamiento no cambia.
+
+### Endpoints nuevos — `/comprobar` y `/completar-todos` (21/04/2026)
+
+Añadidos para diagnosticar y reparar el problema que destapó el Bug 5:
+
+- **`GET /api/spotify/comprobar?artista=X`** — diagnóstico puro, no modifica BD. Devuelve `{artista, totalEnBd, totalEnSpotify, faltan[]}`. Útil para verificar antes de importar. Ejemplo Radiohead: detectó 9 álbumes faltantes.
+- **`GET /api/spotify/completar-todos`** — recorre los artistas en BD y les añade los álbumes que faltaran (no crea artistas nuevos). Pensado para ejecutarse una vez tras el fix de paginación. Resultado parcial del 21/04/2026: 26 de 99 artistas procesados, **+204 álbumes nuevos añadidos** antes de agotar la cuota diaria de Spotify. Pendiente completar los 73 restantes en días sucesivos.
 
 ### Integración Last.fm — `actualizar-metadatos`
 

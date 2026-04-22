@@ -1,0 +1,11 @@
+Your selected colors:
+
+    Text: #ebf0ed - rgb(235, 240, 237) - hsl(144, 14%, 93%)
+    Background: #060907 - rgb(6, 9, 7) - hsl(140, 20%, 3%)
+    Primary: #48a377 - rgb(72, 163, 119) - hsl(151, 39%, 46%)
+    Secondary: #226846 - rgb(34, 104, 70) - hsl(151, 51%, 27%)
+    Accent: #239a60 - rgb(35, 154, 96) - hsl(151, 63%, 37%)
+
+Realtime Colors link for selected colors: https://www.realtimecolors.com/?colors=ebf0ed-060907-48a377-226846-239a60&fonts=Space%20Grotesk-Outfit
+
+Thanks for using RealtimeColors.com!
