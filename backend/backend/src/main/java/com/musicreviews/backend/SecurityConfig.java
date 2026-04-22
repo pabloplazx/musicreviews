@@ -58,7 +58,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/albumes/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/albumes/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/albumes/**").hasRole("ADMIN")
-                .requestMatchers("/api/spotify/**").hasRole("ADMIN")
+                .requestMatchers("/api/spotify/**").permitAll()
                 // Resto de rutas: usuario autenticado
                 .anyRequest().authenticated()
             )

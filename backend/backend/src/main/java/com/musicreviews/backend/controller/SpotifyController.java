@@ -54,6 +54,32 @@ public class SpotifyController {
         }
     }
 
+    // GET /api/spotify/completar-todos
+    // → recorre todos los artistas de la BD, busca cada uno en Spotify y añade los
+    // álbumes que faltasen. Útil tras añadir paginación para recuperar álbumes que
+    // la importación original dejó fuera. Tarda varios minutos.
+    @GetMapping("/completar-todos")
+    public ResponseEntity<String> completarTodos() {
+        try {
+            String resultado = spotifyService.completarTodos();
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al completar todos: " + e.getMessage());
+        }
+    }
+
+    // GET /api/spotify/comprobar?artista=Radiohead
+    // → compara los álbumes que hay en la BD de ese artista con los que Spotify lista
+    // y devuelve los que faltan por importar. Endpoint de diagnóstico, no modifica datos.
+    @GetMapping("/comprobar")
+    public ResponseEntity<?> comprobar(@RequestParam String artista) {
+        try {
+            return ResponseEntity.ok(spotifyService.comprobarArtista(artista));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al comprobar: " + e.getMessage());
+        }
+    }
+
     // GET /api/spotify/actualizar-metadatos
     // → actualiza el género (Spotify) y la biografía (Last.fm) de todos los artistas
     // que tengan esos campos vacíos. También actualiza el género de sus álbumes.

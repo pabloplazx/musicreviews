@@ -481,6 +481,8 @@ Controlador de uso interno para poblar la base de datos con artistas y álbumes 
 | GET | `/api/spotify/importar?artista=` | Importa un artista concreto y sus álbumes desde Spotify | 200 + mensaje |
 | GET | `/api/spotify/importar-lista` | Importa la lista curada de artistas (omite los que ya existen) | 200 + resumen |
 | GET | `/api/spotify/importar-playlist?id=` | Importa artistas desde una playlist pública *(sin soporte desde 2024)* | — |
+| GET | `/api/spotify/completar-todos` | Recorre todos los artistas de la BD y añade los álbumes que faltasen en Spotify (paginando toda la discografía). Tarda varios minutos | 200 + resumen |
+| GET | `/api/spotify/comprobar?artista=` | Compara los álbumes del artista en la BD con los que Spotify lista y devuelve los que faltan. Solo diagnóstico, no modifica datos | 200 + JSON |
 | GET | `/api/spotify/actualizar-metadatos` | Rellena género (Spotify) y biografía (Last.fm) de artistas con esos campos vacíos | 200 + resumen |
 | GET | `/api/spotify/actualizar-portadas` | Busca en Spotify la portada de cada álbum que la tenga vacía y la actualiza | 200 + resumen |
 
@@ -495,6 +497,8 @@ Gestiona la integración con la API de Spotify (importación) y Last.fm (biograf
 | `importarArtista(nombre)` | Busca un artista por nombre en Spotify e importa su información y álbumes. Si ya existe con álbumes, devuelve mensaje informativo |
 | `importarLista()` | Importa una lista curada de artistas. Comprueba la BD antes de llamar a Spotify para evitar duplicados |
 | `importarDesdePlaylist(playlistId)` | Importa artistas desde una playlist pública *(no funcional desde 2024 — Spotify retiró acceso con Client Credentials)* |
+| `completarTodos()` | Recorre todos los artistas de la BD, busca cada uno en Spotify y añade los álbumes que faltasen en su discografía. No crea artistas nuevos |
+| `comprobarArtista(nombre)` | Diagnóstico: compara los álbumes del artista en la BD con los que Spotify lista (paginando todos los `include_groups=album`) y devuelve los que faltan por importar |
 | `actualizarMetadatos()` | Recorre todos los artistas y rellena género (Spotify) y biografía (Last.fm) si están vacíos. También actualiza el género de sus álbumes |
 | `actualizarPortadas()` | Recorre todos los álbumes sin portada y busca su imagen en Spotify por `"título artista"`. Actualiza los que encuentre |
 
