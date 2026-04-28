@@ -1001,3 +1001,72 @@ Probado con maría logueada y sin sesión:
 🔜 Paso 7: Páginas de usuario. `/perfil/:username` (perfil público con reseñas y favoritos del usuario), `/editar-perfil` (PUT con auth), `/favoritos` (lista del usuario logueado).
 
 Detalle completo en [`integracion.md` § 8](integracion.md).
+
+---
+
+## Semana 10 — Fase 4, sesión 6: páginas de usuario (28/04/2026)
+
+**Fase:** FASE 4 — paso 7 del plan.
+
+### Objetivo
+
+Conectar las tres páginas relacionadas con el usuario: perfil público, edición de perfil y mis favoritos.
+
+### Servicio nuevo
+
+| Fichero | Funciones |
+|---|---|
+| `services/usuarios.js` | `getUsuarioPorUsername` (público), `actualizarUsuario(id, datos, token)` (con auth) |
+
+### Cambios
+
+**`AuthContext.jsx`:** nuevo método `actualizarUsuarioLocal(datosUsuario)` que actualiza el estado y localStorage **sin tocar el token**. Permite que tras editar el perfil el navbar muestre el nuevo username/avatar inmediatamente.
+
+**`PerfilUsuario.jsx`:**
+- `useParams` para `:username` (URL más amigable que id).
+- Cadena de fetches: `getUsuarioPorUsername` → `getResenasPorUsuario` → si hay sesión, `getFavoritosUsuario`.
+- `useEffect` separado para favoritos (depende de `usuario+token`, que pueden cambiar sin recargar).
+- Reset de estado al cambiar `:username` para evitar mezclar perfiles.
+- `esMiPerfil` controla la visibilidad del botón "Editar perfil".
+- Tab Favoritos con tres estados: sin sesión, cargando, con datos.
+
+**`EditarPerfil.jsx`:**
+- Inicializado desde `useAuth()` (no fetch adicional).
+- PUT con auth y sincronización del contexto tras éxito (spread `{...usuario, ...actualizado}` para mantener campos no devueltos por el backend).
+- Email solo lectura (el backend no lo permite cambiar).
+- URL para foto en lugar de upload (paso 9 simplificado).
+- Botones de "Cambiar contraseña" y "Desactivar cuenta" eliminados (no hay endpoints).
+- Banner de éxito tras guardar.
+
+**`MisFavoritos.jsx`:**
+- Ruta protegida (paso 4), siempre hay sesión.
+- Botón quitar inline en cada card con `e.preventDefault()` + `stopPropagation()` para no disparar el `<Link>` que envuelve.
+- Optimistic update (filter del array local sin GET adicional).
+- `borrandoId` como guard contra doble click y para indicador visual.
+
+### Decisiones honestas
+
+- **Subida de archivos no implementada** → input de URL. Documentado.
+- **Cambio de contraseña no implementado** → botón eliminado. Documentado.
+- **Desactivar cuenta no implementado** → botón eliminado (DELETE borra de verdad). Documentado.
+
+### Verificación — 9 casos manuales
+
+| Caso | Resultado |
+|---|---|
+| `/perfil/maria_indie` sin sesión | ✅ Datos + reseñas; Favoritos pide login |
+| `/perfil/maria_indie` con sesión de maría | ✅ Botón Editar visible; Favoritos cargan |
+| `/perfil/maria_indie` con sesión de admin | ✅ Sin botón Editar; favoritos visibles |
+| `/perfil/inexistente` | ✅ Mensaje de error del backend |
+| `/editar-perfil` sin sesión | ✅ Redirige a `/login` (RutaProtegida) |
+| Cambiar username y guardar | ✅ Banner verde; navbar actualizado al instante |
+| Cambiar URL de foto | ✅ Preview se actualiza al teclear; navbar tras guardar |
+| `/favoritos` lista y permite quitar inline | ✅ Sin recargar |
+| Click rápido en quitar | ✅ Botón "…" disabled durante DELETE |
+
+### Estado al cerrar la sesión
+
+✅ Pasos 1-7 completos. Falta solo el paso 8 (crear/editar/borrar reseñas) para terminar la integración.
+🔜 Paso 8: `CrearResena` recibe `albumId` por `state` desde DetalleAlbum y hace POST con auth. `EditarResena` carga la reseña existente, permite actualizar (PUT) o borrar (DELETE).
+
+Detalle completo en [`integracion.md` § 9](integracion.md).
