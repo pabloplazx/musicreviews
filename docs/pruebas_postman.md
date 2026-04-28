@@ -506,4 +506,94 @@ Mockito lo inyecta automáticamente en `ResenaService` por tipo. El test no nece
 ### Verificación tras los arreglos
 
 - `./mvnw test` → 38/38 verdes.
-- 6 lotes de pruebas Postman (login + CRUD reseñas + CRUD favoritos + casos de error) → todos OK con `usuario` y `album` poblados, sin basura de Hibernate, sin password filtrado.
+- 6 lotes de pruebas Postman (detallados abajo) → todos OK con `usuario` y `album` poblados, sin basura de Hibernate, sin password filtrado.
+
+---
+
+## Pruebas Postman de la fase 4 — flujo end-to-end con autenticación (28/04/2026)
+
+Pensadas para reproducir lo que hace el frontend real: un cliente que hace login, captura el token y lo usa en peticiones siguientes. Se ejecutan **en orden** porque cada lote depende de las variables que rellena el anterior.
+
+### Lote 1 — Login y captura del token
+
+| Método | Ruta | Body | Script Post-res | Resultado |
+|---|---|---|---|---|
+| POST | `/api/auth/login` | `{"email":"maria@musicreviews.com","password":"maria123"}` | `pm.environment.set("token", pm.response.json().token);` | 200 + `{token, id:5, username:"maria_indie", email, rol:"USER"}`. Variable `{{token}}` rellena. ✅ |
+
+### Lote 2 — POST de reseña con relaciones pobladas (verifica B1 y B2)
+
+`Authorization: Bearer {{token}}` en todas.
+
+| Método | Ruta | Body | Resultado |
+|---|---|---|---|
+| POST | `/api/resenas` | `{"usuario":{"id":5},"album":{"id":16},"puntuacion":4.0,"comentario":"Gran álbum"}` | 200 + reseña completa con `usuario.username:"maria_indie"`, `album.titulo:"Starina"`, `album.artista.nombre:"Rojuu"`. Sin `hibernateLazyInitializer`, sin `password`. ✅ |
+
+Lo que se valida en la respuesta:
+
+| Verificación | Cumplido |
+|---|---|
+| `usuario` con todos los campos no nulos (id, username, email, rol) | ✅ |
+| `album` con campos básicos (id, titulo, género, fecha) | ✅ |
+| `album.artista` anidado con biografía y nombre | ✅ |
+| Sin `hibernateLazyInitializer`, `$$_hibernate_interceptor` en el JSON | ✅ |
+| Sin `password` filtrado | ✅ |
+| `fechaCreacion` rellena por `@PrePersist`, `fechaEdicion` aún null | ✅ |
+
+### Lote 3 — Casos de error de POST de reseña
+
+| # | Método | Ruta | Cambio respecto al lote 2 | Resultado |
+|---|---|---|---|---|
+| 3.1 | POST | `/api/resenas` | Sin Authorization | **401** (vacío) |
+| 3.2 | POST | `/api/resenas` | `album.id` ya reseñado por maría (373) | **400** + `{"mensaje":"El usuario ya ha reseñado este álbum",...}` |
+| 3.3 | POST | `/api/resenas` | `puntuacion: 7` | **400** + `{"mensaje":"La puntuación debe estar entre 0.5 y 5",...}` |
+| 3.4 | POST | `/api/resenas` | `puntuacion: 0` | **400** + mismo mensaje que 3.3 |
+| 3.5 | POST | `/api/resenas` | `Authorization: Bearer xxx.yyy.zzz` | **401** (vacío) |
+
+### Lote 4 — PUT y DELETE de reseña (verifica B3)
+
+Sobre la reseña creada en el lote 2 (ej. id 54). `Authorization: Bearer {{token}}`.
+
+| # | Método | Ruta | Body | Resultado |
+|---|---|---|---|---|
+| 4.1 | PUT | `/api/resenas/54` | `{"puntuacion":5.0,"comentario":"Disco perfecto"}` | **200** + reseña con valores nuevos (5.0 y "Disco perfecto"), `fechaEdicion` rellena. ✅ |
+| 4.2 | PUT | `/api/resenas/54` | `{"puntuacion":10}` | **400** + mensaje de puntuación inválida. La reseña no se modifica. ✅ |
+| 4.3 | PUT | `/api/resenas/99999` | body válido | **404** + `"Reseña no encontrada"` ✅ |
+| 4.4 | DELETE | `/api/resenas/54` | — | **204** sin body ✅ |
+| 4.5 | DELETE | `/api/resenas/54` | — | **404** + `"Reseña no encontrada"` ✅ |
+
+### Lote 5 — Favoritos (verifica B1 también en la otra entidad LAZY)
+
+`Authorization: Bearer {{token}}`.
+
+| # | Método | Ruta | Body | Resultado |
+|---|---|---|---|---|
+| 5.1 | POST | `/api/favoritos` | `{"usuario":{"id":5},"album":{"id":16}}` | **200** + favorito con `usuario` y `album.artista` poblados, `fechaAgregado` rellena. ✅ |
+| 5.2 | POST | `/api/favoritos` | mismo body | **400** + `{"mensaje":"El álbum ya está en favoritos",...}` ✅ |
+| 5.3 | GET | `/api/favoritos/existe?usuarioId=5&albumId=16` | — | **200** + `true` ✅ |
+| 5.4 | GET | `/api/favoritos/existe?usuarioId=5&albumId=999` | — | **200** + `false` ✅ |
+| 5.5 | DELETE | `/api/favoritos?usuarioId=5&albumId=16` | — | **204** sin body ✅ |
+| 5.6 | DELETE | `/api/favoritos?usuarioId=5&albumId=16` | — | **404** + `"El álbum no está en favoritos"` ✅ |
+| 5.7 | GET | `/api/favoritos?usuarioId=5` | — | **200** + array con 6 favoritos de maría, todos con `usuario` y `album.artista` poblados. ✅ |
+
+### Lote 6 — Verificación del bug B4 (login con error en JSON)
+
+Después de cambiar `AuthController.login` para lanzar `ReglaNegocioException`:
+
+| Método | Ruta | Body | Resultado |
+|---|---|---|---|
+| POST | `/api/auth/login` | `{"email":"maria@musicreviews.com","password":"WRONG"}` | **400** + `{"status":400,"mensaje":"Email o contraseña incorrectos","timestamp":"..."}` con `Content-Type: application/json`. ✅ |
+
+**Antes** del arreglo: 401 con `Content-Type: text/plain` y body `Email o contraseña incorrectos` (no JSON, frontend petaba al hacer `res.json()`).
+**Después**: el frontend ya puede parsear todas las respuestas como JSON y mostrar el `mensaje` al usuario sin error técnico.
+
+### Resumen de los 6 lotes
+
+| Lote | Endpoints/casos | Status |
+|---|---|---|
+| 1 | Login + captura token | 1 OK |
+| 2 | POST reseña con relaciones | 1 OK con 6 verificaciones |
+| 3 | Casos de error POST (sin token, duplicado, puntuación, token corrupto) | 5/5 |
+| 4 | PUT y DELETE reseña (incluye casos error) | 5/5 |
+| 5 | Favoritos: POST/GET/DELETE + casos error | 7/7 |
+| 6 | Login con error JSON (B4) | 1/1 |
+| **Total** | **20 casos verificados** | **20/20 OK** |
