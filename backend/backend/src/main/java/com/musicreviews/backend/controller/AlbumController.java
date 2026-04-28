@@ -22,7 +22,8 @@ public class AlbumController {
 
     // GET /api/albumes → devuelve álbumes paginados.
     // Acepta ?q= (búsqueda unificada en título o artista), ?titulo= (solo título),
-    // ?genero=, ?artistaId= para filtrar, y ?page=0&size=12 para paginar.
+    // ?genero=, ?artistaId= para filtrar, ?page=0&size=12 para paginar,
+    // y ?sort= con valores: az (default), za, recientes, antiguos.
     @GetMapping
     public Page<Album> obtenerTodos(
             @RequestParam(required = false) String q,
@@ -30,13 +31,25 @@ public class AlbumController {
             @RequestParam(required = false) String genero,
             @RequestParam(required = false) Long artistaId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "12") int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("titulo").ascending());
+            @RequestParam(defaultValue = "12") int size,
+            @RequestParam(defaultValue = "az") String sort) {
+        Pageable pageable = PageRequest.of(page, size, parseSort(sort));
         if (q != null && !q.isBlank()) return albumService.buscar(q, pageable);
         if (titulo != null && !titulo.isBlank()) return albumService.buscarPorTitulo(titulo, pageable);
         if (genero != null && !genero.isBlank()) return albumService.obtenerPorGenero(genero, pageable);
         if (artistaId != null) return albumService.obtenerPorArtista(artistaId, pageable);
         return albumService.obtenerTodos(pageable);
+    }
+
+    // Traduce el valor del parámetro sort a un Sort de Spring Data.
+    // Valores aceptados: az, za, recientes, antiguos. Cualquier otro → az por defecto.
+    private Sort parseSort(String sort) {
+        return switch (sort) {
+            case "za" -> Sort.by("titulo").descending();
+            case "recientes" -> Sort.by("fechaLanzamiento").descending();
+            case "antiguos" -> Sort.by("fechaLanzamiento").ascending();
+            default -> Sort.by("titulo").ascending();
+        };
     }
 
     // GET /api/albumes/{id} → busca un álbum por su ID. 404 JSON si no existe.
