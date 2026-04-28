@@ -1908,11 +1908,55 @@ Probado con admin (`admin@musicreviews.com / admin123`):
 | Buscar "Rojuu" en `/catalogo` o `/busqueda` | ✅ Devuelve sus álbumes (Starina, etc.) — fix de búsqueda |
 | Buscar "OK Computer" | ✅ Sigue devolviendo el álbum como antes |
 
-### Limitaciones que se quedan (y se documentan en § 12)
+### Limitaciones que se quedan (y se documentan en § 13)
 
 - **Borrar reseña no verifica owner/admin en backend** — protección solo a nivel de UI. Mejora futura.
 - **Crear álbum desde UI** — fuera de alcance, los álbumes entran vía Spotify import.
 - **Borrar artista o álbum** desde el panel — no implementado: con FK a álbumes/reseñas, hay que cascadear; sale del alcance del paso.
+
+### Mejoras de UX posteriores (mismo día)
+
+Tras cerrar el panel admin se hicieron tres ajustes pequeños pero visibles:
+
+**1. Orden funcional en `/catalogo` con 4 opciones** (commits backend `bb1f9b3` + frontend `b490035`).
+
+`AlbumController` ahora acepta `?sort=az|za|recientes|antiguos`. Antes hardcodeaba `Sort.by("titulo").ascending()` y el frontend solo mostraba "A → Z" porque era la única que funcionaba.
+
+```java
+private Sort parseSort(String sort) {
+    return switch (sort) {
+        case "za" -> Sort.by("titulo").descending();
+        case "recientes" -> Sort.by("fechaLanzamiento").descending();
+        case "antiguos" -> Sort.by("fechaLanzamiento").ascending();
+        default -> Sort.by("titulo").ascending();
+    };
+}
+```
+
+`switch` expression de Java moderno. Cualquier valor desconocido cae al default. El frontend lo combina con búsqueda + filtro de género: cambiar el orden resetea la página a 1.
+
+**Mejor valorados** sigue fuera de alcance porque requeriría agregar reseñas (el modelo `Album` no tiene `puntuacionMedia`). Se documenta en el commit como "mejora futura con `@Formula` o `@Query` custom".
+
+**2. Hero del Inicio: card más grande + reseña destacada con comentario** (commit `e0a1d7c`).
+
+- Card de la columna derecha: `w-55` (220px) → `w-80` (320px) — un 45% más grande, equilibra el peso visual del título grande de la izquierda ("Descubre. Escucha. Opina." en `text-6xl`).
+- Padding y tipografía ajustados (título del álbum `text-sm` → `text-xl`, etc.).
+- Lógica de elección de la reseña destacada cambiada: antes "la mejor de las 10 recientes", ahora "la mejor **con comentario** de las 10 recientes". Sin texto el Hero queda visualmente pobre (solo estrellas), así que se filtra primero. Fallback a la mejor sin filtrar si ninguna reciente tiene texto.
+
+```js
+const resenaDestacada = (() => {
+  if (!resenas || resenas.length === 0) return null;
+  const conTexto = resenas.filter((r) => r.comentario && r.comentario.trim());
+  const candidatas = conTexto.length > 0 ? conTexto : resenas;
+  return [...candidatas].sort((a, b) => b.puntuacion - a.puntuacion)[0];
+})();
+```
+
+IIFE para no contaminar el scope con variables intermedias y sin `useMemo` (ordenar 10 elementos es barato; `useMemo` con dep `resenas` no aporta nada).
+
+**3. Bug del HMR de Vite identificado durante las pruebas**.
+
+Durante las pruebas del CRUD de reseñas con tantos archivos modificados a la vez, Vite no aplicó cambios correctamente y "Editar reseña" pareció no funcionar. Tras un `Ctrl+F5` arrancó. Documentado como aprendizaje: en sesiones largas con muchos cambios estructurales (carpetas nuevas, servicios nuevos), HMR puede confundirse y un refresh manual lo resuelve. Importante mencionarlo en la defensa si te preguntan por bugs.
 
 ---
 
@@ -2013,18 +2057,29 @@ Estas son las cosas que el frontend NO hace y por qué. Todas tienen su justific
 | Limitación | Causa | Sección |
 |---|---|---|
 | Sin verificación de email al registrarse | Requiere SMTP + endpoint de verificación + columna `email_verificado` | Anexo |
-| Catálogo sin estrellas | El listado paginado del backend no devuelve `puntuacionMedia` | § 7 |
-| Solo orden A→Z en catálogo | Backend no acepta parámetro `sort` en el listado | § 7 |
-| Búsqueda solo de álbumes | No hay endpoints de búsqueda de artistas/usuarios | § 7 |
-| Sin reseñas recientes en DetalleArtista | No hay endpoint dedicado | § 8 |
+| Catálogo sin estrellas (rating no agregado en el listado) | El listado paginado del backend no devuelve `puntuacionMedia` | § 7 |
+| Sin orden "Mejor valorados" en catálogo | Requiere `@Formula` con subselect o `@Query` con LEFT JOIN sobre `resena` + GROUP BY | § 11 |
+| Búsqueda solo de álbumes (no busca artistas ni usuarios como entidades propias) | El endpoint `?q=` matchea álbumes por título o nombre del artista; no devuelve artistas como resultado independiente. Lista propia de artistas/usuarios requiere endpoints nuevos | § 11 |
+| Sin reseñas recientes en DetalleArtista | No hay endpoint dedicado; haría falta N+1 | § 8 |
 | Sin "seguir artista" | No hay endpoint | § 8 |
-| Stats reducidas en DetalleArtista | No hay endpoint para media+total por artista | § 8 |
-| Sin subida de archivos | Backend no tiene endpoint multipart | § 9 |
+| Stats reducidas en DetalleArtista (solo álbumes) | No hay endpoint para media+total reseñas por artista | § 8 |
+| Sin subida de archivos (foto perfil, portadas) | Backend no tiene endpoint multipart; el panel admin no permite crear álbumes por la misma razón (subir portada) | § 9 |
 | Sin cambio de contraseña | Backend no expone endpoint | § 9 |
-| Sin desactivar cuenta (DELETE borra de verdad) | Backend no expone endpoint para `activo = false` | § 9 |
-| Sin invalidación de JWT al hacer logout | JWT puro no permite invalidación; haría falta blacklist | § 6 (paso 4) |
+| `DELETE /api/resenas/{id}` no verifica owner/admin | Cualquier autenticado puede borrar cualquier reseña por API directa. Protección solo a nivel de UI (botón solo en `/admin`) | § 11 |
+| Sin invalidación de JWT al hacer logout | JWT puro no permite invalidación; haría falta blacklist en servidor o tokens cortos + refresh | § 6 (paso 4) |
+| Sin borrado en cascada de artistas/álbumes desde el panel | Requiere cascadear a álbumes/reseñas hijas o validar antes; sale del alcance | § 11 |
 
-Cada una se podría implementar con un cambio relativamente acotado en el backend y otro en el frontend. Quedan como **ampliaciones futuras** que no afectan al núcleo de funcionalidad evaluable del TFG.
+**Limitaciones que SE RESOLVIERON durante la fase 4** (no estaban resueltas en versiones anteriores de este documento):
+
+| Antes | Después |
+|---|---|
+| Solo orden A→Z en catálogo | 4 órdenes: A→Z, Z→A, recientes, antiguos (`?sort=` en backend) |
+| Búsqueda solo por título de álbum | Búsqueda unificada `?q=` matchea título O nombre de artista |
+| Panel admin con datos mock | Panel admin funcional con stats reales, gestión de usuarios, crear artista, moderar reseñas |
+| Sin desactivar cuentas | Endpoint `PATCH /api/usuarios/{id}/activo` (solo ADMIN) funcional |
+| `GET /api/usuarios` accesible a cualquier autenticado (filtraba emails) | Restringido a ADMIN |
+
+Cada una de las limitaciones que quedan se podría implementar con un cambio relativamente acotado en el backend y otro en el frontend. Son **ampliaciones futuras** que no afectan al núcleo de funcionalidad evaluable del TFG.
 
 ---
 

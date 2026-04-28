@@ -1228,3 +1228,15 @@ Probado con admin logueado:
 - Sin invalidación de JWT en logout
 
 Todas son del backend, todas tienen justificación de alcance (TFG, no app de producción), todas se podrían añadir con cambios acotados en futuro. Detalle completo en [`integracion.md` § 11](integracion.md).
+
+### Mejoras de UX posteriores (mismo día, commits sueltos)
+
+Tras cerrar el panel admin se hicieron tres ajustes pequeños pero visibles:
+
+1. **Orden funcional en `/catalogo`** (commits backend `bb1f9b3` + frontend `b490035`). `AlbumController` acepta `?sort=az|za|recientes|antiguos`. Antes solo había "A → Z" porque era la única que el backend soportaba. "Mejor valorados" sigue fuera de alcance — requeriría agregar reseñas (`@Formula` con subselect o `@Query` custom).
+2. **Hero del Inicio: card más grande + reseña destacada con comentario** (commit `e0a1d7c`). Card `w-55` (220px) → `w-80` (320px), tipografía aumentada. Lógica cambiada: antes "la mejor de las 10 recientes", ahora "la mejor **con comentario** de las 10 recientes". Sin texto el Hero queda visualmente pobre.
+3. **Color del Hero del Inicio**: `bg-card` → `bg-surface` (verde oscuro). El `bg-card` se confundía visualmente con el navbar y otras cards. `bg-surface` es el mismo color que ya usa la CTA del fondo, así que se mantiene la coherencia.
+
+### Bug puntual identificado durante las pruebas
+
+Durante las pruebas del CRUD de reseñas, "Editar reseña" pareció no funcionar tras hacer muchos cambios de archivos. Tras `Ctrl+F5` funcionó. Aprendizaje: con HMR de Vite y muchos cambios estructurales, a veces hace falta un refresh manual del navegador. Mencionable en la defensa si te preguntan por bugs encontrados.
