@@ -1070,3 +1070,77 @@ Conectar las tres páginas relacionadas con el usuario: perfil público, edició
 🔜 Paso 8: `CrearResena` recibe `albumId` por `state` desde DetalleAlbum y hace POST con auth. `EditarResena` carga la reseña existente, permite actualizar (PUT) o borrar (DELETE).
 
 Detalle completo en [`integracion.md` § 9](integracion.md).
+
+---
+
+## Semana 10 — Fase 4, sesión 7: CRUD de reseñas (28/04/2026)
+
+**Fase:** FASE 4 — paso 8 del plan. **Cierre de la integración frontend ↔ backend.**
+
+### Objetivo
+
+Conectar las dos pantallas restantes (`/crear-resena` y `/editar-resena`) y mejorar la navegación entre ellas para que la UX sea coherente.
+
+### Cambios
+
+**`services/resenas.js` ampliado:**
+
+| Función | Endpoint |
+|---|---|
+| `crearResena({usuarioId, albumId, puntuacion, comentario}, token)` | POST /api/resenas |
+| `actualizarResena(id, {puntuacion, comentario}, token)` | PUT /api/resenas/{id} |
+| `borrarResena(id, token)` | DELETE /api/resenas/{id} |
+
+**`CrearResena.jsx`:**
+- Recibe `albumId` por `location.state` desde DetalleAlbum.
+- Carga el álbum (`getAlbum`) para previsualizar la card.
+- POST con auth, redirige a `/album/:id` con `replace` tras éxito.
+- Pantalla de aviso si entra sin albumId (entrada directa a la URL).
+
+**`EditarResena.jsx`:**
+- Recibe `albumId` por `location.state`.
+- Carga la reseña existente con `getResenaUsuarioAlbum`. Si no existe, redirige automáticamente a `/crear-resena`.
+- PUT con auth para guardar cambios.
+- DELETE con `window.confirm` para borrar.
+- Muestra "Publicada" y "Última edición" con las fechas reales.
+
+**Mejoras transversales:**
+
+- **`DetalleAlbum.jsx`**: detecta si el usuario logueado ya tiene reseña sobre el álbum y cambia el botón "Escribir reseña" → "Editar mi reseña" para que no aparezca el 400 "ya ha reseñado".
+- **`PerfilUsuario.jsx`**: si `esMiPerfil`, añade botón "✎ Editar" en cada card de reseña (con `e.preventDefault/stopPropagation` para no disparar el Link envolvente).
+
+### Verificación — 12 casos del CRUD completo
+
+| Caso | Resultado |
+|---|---|
+| Click en "Escribir reseña" desde DetalleAlbum sin reseña previa | ✅ /crear-resena con álbum cargado |
+| Submit con puntuación 0 | ✅ Botón disabled |
+| Submit válido | ✅ POST OK + redirige al álbum |
+| Volver al álbum tras crear | ✅ Botón ahora dice "Editar mi reseña" |
+| Click en "Editar mi reseña" | ✅ /editar-resena pre-rellenada |
+| Cambiar puntuación + guardar | ✅ PUT OK, valores nuevos visibles |
+| /editar-resena con álbum sin reseña previa | ✅ Redirige a /crear-resena |
+| Botón "Eliminar reseña" + confirm | ✅ DELETE + redirige al álbum |
+| Botón "Eliminar reseña" + cancelar | ✅ No hace nada |
+| Mi perfil, botón "✎ Editar" en una reseña | ✅ /editar-resena con albumId |
+| Click en card sin tocar Editar | ✅ Lleva al álbum (no a editar) |
+| Sin sesión a /crear-resena | ✅ RutaProtegida redirige a /login |
+
+### Estado final de la fase 4
+
+✅ **Integración completa frontend ↔ backend.** Las 15 pantallas tienen contenido real, navegación coherente y manejo de errores. El paso 9 (subida de archivos) se sustituyó por "URL como input" en el paso 7 — la subida real queda como mejora futura porque requiere endpoint multipart en el backend.
+
+**Limitaciones conocidas documentadas en `integracion.md` § 12:**
+
+- Sin verificación de email
+- Sin cambio de contraseña
+- Sin desactivar cuenta (DELETE borra)
+- Sin subida de archivos (URL como workaround)
+- Sin invalidación del JWT en logout
+- Catálogo sin estrellas (backend no devuelve puntuación en listado)
+- Solo orden A→Z (backend no acepta `sort`)
+- Búsqueda solo por título de álbum
+- Sin "seguir artista"
+- Sin reseñas recientes ni stats compuestas en DetalleArtista
+
+Todas tienen justificación honesta en el doc — son limitaciones del backend o decisiones de alcance, no bugs.

@@ -1595,9 +1595,149 @@ Más rápido que un round-trip extra al servidor y la UI se actualiza al instant
 
 ---
 
-## 10. Resumen de cambios durante esta sesión hasta paso 7
+## 10. Paso 8 — Reseñas (crear, editar, borrar)
 
-A continuación los nuevos del paso 7 (los anteriores ya están listados arriba):
+### El problema que resuelve
+
+`/crear-resena` y `/editar-resena` siguen con datos mock. Es la última pieza de funcionalidad: permitir que los usuarios escriban, modifiquen y borren sus propias reseñas. Tras este paso, **el ciclo CRUD de reseñas funciona completo desde la UI**.
+
+### Servicio `services/resenas.js` ampliado
+
+Antes solo tenía las funciones de lectura (públicas). Ahora se añaden las tres de escritura (con auth):
+
+```js
+export async function crearResena({ usuarioId, albumId, puntuacion, comentario }, token) { ... }
+export async function actualizarResena(id, { puntuacion, comentario }, token) { ... }
+export async function borrarResena(id, token) { ... }
+```
+
+Mismo patrón que `favoritos.js`: token como último parámetro, header `Authorization: Bearer ...`. La forma del body sigue exactamente la del backend (objetos anidados `{usuario: {id}, album: {id}}`).
+
+### `CrearResena.jsx`
+
+**`albumId` por `location.state`:** desde `DetalleAlbum.jsx` (paso 6) el botón "Escribir reseña" pasa `state={{ albumId: album.id }}`. Aquí se lee con:
+
+```jsx
+const albumId = location.state?.albumId;
+```
+
+Si no hay `albumId` (entrada directa a `/crear-resena` sin venir de un álbum), se muestra una pantalla de aviso con un link al catálogo. Se evita así la pregunta "¿de qué álbum?" que un selector implicaría — se invierte el flujo: el usuario elige el álbum primero, después escribe.
+
+**Carga del álbum para previsualizar la card:** `getAlbum(albumId)` muestra portada, título, artista, año y género en la columna izquierda. Al usuario le ayuda saber qué está reseñando, además de que la card ya estaba en el diseño Figma.
+
+**Submit con `crearResena`:** tras éxito, `navigate(\`/album/${albumId}\`, { replace: true })` lleva al detalle del álbum donde la nueva reseña aparece en la lista. `replace` para que pulsando "atrás" no vuelva al formulario que ya envió.
+
+**Manejo de errores del backend:** si el usuario ya tiene reseña sobre ese álbum, el backend devuelve 400 con `mensaje: "El usuario ya ha reseñado este álbum"`. El servicio lanza `Error` con ese mensaje y se muestra en un banner rojo. La detección preventiva (paso siguiente) hace que este caso sea raro pero el manejo está.
+
+### `EditarResena.jsx`
+
+**`albumId` por `location.state` igual que CrearResena**, pero aquí se carga la reseña existente:
+
+```jsx
+useEffect(() => {
+  getResenaUsuarioAlbum(usuario.id, albumId)
+    .then((r) => {
+      if (!r) {
+        // No tiene reseña previa: redirigir a CrearResena
+        navigate("/crear-resena", { state: { albumId }, replace: true });
+        return;
+      }
+      setResena(r);
+      setPuntuacion(r.puntuacion);
+      setComentario(r.comentario ?? "");
+    });
+}, [usuario.id, albumId, navigate]);
+```
+
+**Si el usuario llega a `/editar-resena` pero no tiene reseña previa**, en lugar de mostrar error se redirige automáticamente a `/crear-resena` con el mismo `albumId`. UX transparente: el usuario quería escribir/editar una reseña sobre ese álbum, y se le lleva al formulario correcto.
+
+**Eliminar reseña con `window.confirm`:**
+
+```jsx
+async function handleEliminar() {
+  if (!window.confirm("¿Seguro que quieres eliminar esta reseña? Esta acción no se puede deshacer.")) return;
+  // ...
+  await borrarResena(resena.id, token);
+  navigate(`/album/${albumId}`, { replace: true });
+}
+```
+
+`window.confirm` es la solución más simple para confirmaciones destructivas. Para un TFG no se justifica un modal custom. Tras borrar, vuelve al detalle del álbum.
+
+**Estado de "Detalles de tu reseña":** muestra `fechaCreacion` ("Publicada") y `fechaEdicion` ("Última edición"). La edición se actualiza automáticamente en el backend con `@PreUpdate` cada vez que se hace PUT, así que al volver tras guardar la fecha estará actualizada.
+
+### Mejoras transversales en otras páginas
+
+#### `DetalleAlbum.jsx` — botón inteligente
+
+Si el usuario logueado **ya tiene reseña** sobre este álbum, el botón "Escribir reseña" se convierte en "Editar mi reseña" → `/editar-resena`. Esto requiere comprobar al cargar:
+
+```jsx
+useEffect(() => {
+  if (!usuario) return;
+  getResenaUsuarioAlbum(usuario.id, Number(id))
+    .then(setMiResena)
+    .catch(() => setMiResena(null));
+}, [usuario, id]);
+```
+
+Y en el JSX:
+
+```jsx
+{miResena ? (
+  <Link to="/editar-resena" state={{ albumId: album.id }}>✎ Editar mi reseña</Link>
+) : (
+  <Link to="/crear-resena" state={{ albumId: album.id }}>✎ Escribir reseña</Link>
+)}
+```
+
+Sin esto, el usuario podría intentar crear una reseña duplicada y recibir 400. Aunque el manejo de error está, es mejor evitar el caso de raíz.
+
+#### `PerfilUsuario.jsx` — botón "Editar" en sus propias reseñas
+
+Cuando `esMiPerfil`, en cada card de reseña aparece un botón "✎ Editar" en la esquina derecha. Igual que en `MisFavoritos`, los clicks anidados se gestionan con `e.preventDefault()` + `e.stopPropagation()` para evitar disparar el `<Link>` exterior:
+
+```jsx
+<button
+  onClick={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigate("/editar-resena", { state: { albumId: r.album.id } });
+  }}
+>
+  ✎ Editar
+</button>
+```
+
+### Verificación — pruebas manuales completas del CRUD
+
+Probado con maría logueada en distintos álbumes:
+
+| Caso | Resultado |
+|---|---|
+| `/album/16` (sin reseña previa de maría), click en "Escribir reseña" | ✅ Lleva a `/crear-resena` con la card del álbum cargada |
+| Submit con puntuación 0 | ✅ Botón "Publicar" disabled (no se permite) |
+| Submit con puntuación 4 + comentario | ✅ POST OK, redirige a `/album/16` y la reseña aparece en la lista |
+| Volver a entrar a `/album/16` | ✅ El botón ahora dice "Editar mi reseña" |
+| Click en "Editar mi reseña" | ✅ `/editar-resena` con la reseña pre-rellenada |
+| Cambiar puntuación a 5 y guardar | ✅ PUT OK, vuelve a `/album/16` con los valores nuevos y `fechaEdicion` rellena |
+| `/editar-resena` con `albumId` de un álbum donde no tengo reseña | ✅ Redirige automáticamente a `/crear-resena` |
+| Botón "Eliminar reseña" | ✅ `window.confirm`, click en OK → DELETE → vuelve a `/album/16` y la reseña ya no está |
+| Botón "Eliminar reseña" → cancelar en confirm | ✅ No hace nada |
+| `/perfil/maria_indie` (mi perfil), botón "✎ Editar" en una reseña | ✅ Lleva a `/editar-resena` con el albumId correcto |
+| Click en la card sin tocar el botón "Editar" | ✅ Lleva al detalle del álbum (no a editar) |
+| Sin sesión, intentar acceder a `/crear-resena` | ✅ Redirige a `/login` (RutaProtegida del paso 4) |
+
+### Limitaciones conocidas
+
+- **No hay editor enriquecido para el comentario** — solo textarea simple. Con un álbum tan visual como uno de música podría tener sentido permitir negritas/cursiva, pero es feature, no bloqueante.
+- **No hay sistema de "respuestas a una reseña"** ni "me gusta" en reseñas — fuera del modelo de datos actual.
+
+---
+
+## 11. Resumen de cambios durante toda la sesión
+
+A continuación los nuevos del paso 8 (los anteriores ya están listados arriba):
 
 ### Backend
 
@@ -1644,25 +1784,53 @@ A continuación los nuevos del paso 7 (los anteriores ya están listados arriba)
 | `pages/PerfilUsuario.jsx` | `useParams` para `:username`; cadena de 2-3 fetches; tabs Reseñas/Favoritos con estados condicionales según haya o no sesión; botón "Editar" solo si `esMiPerfil` | Paso 7 |
 | `pages/EditarPerfil.jsx` | Inicializado desde `useAuth`; PUT con auth; sincroniza contexto tras éxito; email read-only; URL en lugar de upload; botones de cambiar contraseña y desactivar cuenta eliminados | Paso 7 |
 | `pages/MisFavoritos.jsx` | `getFavoritosUsuario` con auth; quitar inline con `e.preventDefault/stopPropagation` para no disparar el Link; optimistic update (filter del array sin recargar) | Paso 7 |
+| `services/resenas.js` *(ampliado)* | Añadidas `crearResena`, `actualizarResena`, `borrarResena` (con auth) | Paso 8 |
+| `pages/CrearResena.jsx` | Recibe `albumId` por `state`; carga el álbum para previsualizar; POST con auth; redirige al detalle al terminar; pantalla de aviso si entra sin albumId | Paso 8 |
+| `pages/EditarResena.jsx` | Recibe `albumId` por `state`; carga la reseña existente del usuario+álbum; si no existe, redirige a CrearResena; PUT y DELETE con auth y `window.confirm` para confirmar borrado | Paso 8 |
+| `pages/DetalleAlbum.jsx` *(mejorado)* | Detecta si el usuario ya tiene reseña sobre este álbum y cambia "Escribir reseña" por "Editar mi reseña" → `/editar-resena` | Paso 8 |
+| `pages/PerfilUsuario.jsx` *(mejorado)* | Si `esMiPerfil`, botón "✎ Editar" en cada reseña (con `preventDefault/stopPropagation` por el Link envolvente) | Paso 8 |
 | **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
 
-**23 ficheros tocados + 8 nuevos + 10 borrados de basura/docs antiguos.**
+**26 ficheros tocados + 10 nuevos + 10 borrados de basura/docs antiguos.**
 
 ---
 
-## 11. Estado al cerrar esta entrega
+## 12. Estado al cerrar esta entrega
 
-✅ **Pasos 1-7 completos.**
-   - 1: AuthContext
-   - 2: Login + Registro funcionales
-   - 3: Navbar dinámico
-   - 4: Rutas protegidas
-   - 5: Páginas públicas con datos reales
-   - 6: Detalle de álbum y artista (con favoritos funcional)
-   - 7: Páginas de usuario (perfil, editar perfil, mis favoritos)
+✅ **Pasos 1-8 completos. La integración frontend ↔ backend está terminada.**
+
+   - 1: **AuthContext** — estado compartido del usuario y token, persistencia en localStorage.
+   - 2: **Login + Registro** funcionales contra el backend.
+   - 3: **Navbar dinámico** según sesión + rol.
+   - 4: **Rutas protegidas** con `<RutaProtegida>` y `<RutaAdmin>`.
+   - 5: **Páginas públicas** (Inicio, Catálogo, Búsqueda, Rankings) con datos reales.
+   - 6: **Detalle de álbum y artista** + toggle de favoritos funcional.
+   - 7: **Páginas de usuario** (perfil, editar perfil, mis favoritos).
+   - 8: **CRUD de reseñas** (crear, editar, borrar) con todas las navegaciones cruzadas.
+
 ✅ **Backend con 5 bugs arreglados, 38/38 tests verdes.**
 
-🔜 **Siguiente: paso 8 (Reseñas: crear, editar, borrar).** `/crear-resena` y `/editar-resena` siguen mock. Hay que conectarlas con `POST /api/resenas` y `PUT /api/resenas/{id}` (con auth) y permitir borrar la propia reseña desde la pantalla de edición. Es el último paso de funcionalidad — el paso 9 (subida de archivos) se ha simplificado a "URL como input" en el paso 7.
+ℹ️ **Paso 9 (subida de archivos)** se ha simplificado a "URL como input" en el paso 7 (foto de perfil). La subida real con `multipart/form-data` queda fuera del alcance del TFG: requiere endpoint nuevo en el backend, manejo de almacenamiento (sistema de ficheros local o storage tipo S3) y validación de tipos de archivo. Se documenta como mejora futura.
+
+### Limitaciones conocidas — recopilación final
+
+Estas son las cosas que el frontend NO hace y por qué. Todas tienen su justificación documentada en las secciones del paso correspondiente:
+
+| Limitación | Causa | Sección |
+|---|---|---|
+| Sin verificación de email al registrarse | Requiere SMTP + endpoint de verificación + columna `email_verificado` | Anexo |
+| Catálogo sin estrellas | El listado paginado del backend no devuelve `puntuacionMedia` | § 7 |
+| Solo orden A→Z en catálogo | Backend no acepta parámetro `sort` en el listado | § 7 |
+| Búsqueda solo de álbumes | No hay endpoints de búsqueda de artistas/usuarios | § 7 |
+| Sin reseñas recientes en DetalleArtista | No hay endpoint dedicado | § 8 |
+| Sin "seguir artista" | No hay endpoint | § 8 |
+| Stats reducidas en DetalleArtista | No hay endpoint para media+total por artista | § 8 |
+| Sin subida de archivos | Backend no tiene endpoint multipart | § 9 |
+| Sin cambio de contraseña | Backend no expone endpoint | § 9 |
+| Sin desactivar cuenta (DELETE borra de verdad) | Backend no expone endpoint para `activo = false` | § 9 |
+| Sin invalidación de JWT al hacer logout | JWT puro no permite invalidación; haría falta blacklist | § 6 (paso 4) |
+
+Cada una se podría implementar con un cambio relativamente acotado en el backend y otro en el frontend. Quedan como **ampliaciones futuras** que no afectan al núcleo de funcionalidad evaluable del TFG.
 
 ---
 

@@ -497,6 +497,34 @@ Las tres páginas relacionadas con el usuario conectadas con el backend.
 
 **9 casos verificados manualmente.** Detalle: [`integracion.md` § 9](integracion.md).
 
+### Sesión 7 (28/04/2026) — paso 8: CRUD de reseñas (cierre de la integración)
+
+Última sesión de la fase 4. Conexión de las dos pantallas restantes y mejoras transversales.
+
+**`services/resenas.js` ampliado** con `crearResena`, `actualizarResena`, `borrarResena` (todas con token).
+
+**Páginas conectadas:**
+
+- `CrearResena.jsx` — recibe `albumId` por `location.state` desde DetalleAlbum, carga el álbum para previsualizar, POST con auth, redirige al álbum tras éxito. Pantalla de aviso si se entra sin albumId.
+- `EditarResena.jsx` — `getResenaUsuarioAlbum` para cargar la reseña; si no existe, redirige a CrearResena. PUT y DELETE con auth, `window.confirm` para confirmar borrado, muestra fechas de publicación y última edición reales.
+
+**Mejoras transversales:**
+
+- `DetalleAlbum.jsx` detecta si el usuario logueado ya tiene reseña y cambia "Escribir reseña" por "Editar mi reseña". Evita el 400 "ya has reseñado".
+- `PerfilUsuario.jsx` añade botón "✎ Editar" en cada reseña si `esMiPerfil`.
+
+**12 casos del CRUD completo verificados manualmente.**
+
+### Estado final de la fase 4
+
+✅ **Integración completa frontend ↔ backend.** Las 15 pantallas tienen contenido real, navegación coherente y manejo de errores.
+
+ℹ️ **Paso 9 (subida de archivos)** simplificado a "URL como input" en el paso 7. La subida real queda como mejora futura.
+
+**Limitaciones conocidas documentadas en `integracion.md` § 12** (sin verificación de email, sin cambio password, sin desactivar cuenta, etc. — todas tienen justificación honesta y son limitaciones del backend o decisiones de alcance).
+
+Detalle completo: [`integracion.md` § 10](integracion.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |
