@@ -32,6 +32,13 @@ public class UsuarioController {
                 .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado")));
     }
 
+    // GET /api/usuarios/username/{username} → busca un usuario por su username. 404 JSON si no existe.
+    @GetMapping("/username/{username}")
+    public ResponseEntity<Usuario> obtenerPorUsername(@PathVariable String username) {
+        return ResponseEntity.ok(usuarioService.obtenerPorUsername(username)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado")));
+    }
+
     // PUT /api/usuarios/{id} → actualiza username, foto de perfil y bio. No permite cambiar email ni contraseña.
     @PutMapping("/{id}")
     public ResponseEntity<Usuario> actualizar(@PathVariable Long id, @RequestBody Usuario datos) {

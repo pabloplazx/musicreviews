@@ -71,9 +71,9 @@ public class ResenaService {
         resenaRepository.deleteById(id);
     }
 
-    private void validarPuntuacion(int puntuacion) {
-        if (puntuacion < 1 || puntuacion > 5) {
-            throw new ReglaNegocioException("La puntuación debe estar entre 1 y 5");
+    private void validarPuntuacion(Double puntuacion) {
+        if (puntuacion < 0.5 || puntuacion > 5) {
+            throw new ReglaNegocioException("La puntuación debe estar entre 0.5 y 5");
         }
     }
 }

@@ -29,9 +29,9 @@ public class Resena {
     @JoinColumn(name = "album_id", nullable = false)
     private Album album;
 
-    // Puntuación del 1 al 5. La validación del rango se hace en la capa de servicio.
+    // Puntuación de 0.5 a 5 en incrementos de 0.5 (medias estrellas). La validación del rango se hace en la capa de servicio.
     @Column(nullable = false)
-    private int puntuacion;
+    private Double puntuacion;
 
     // Texto de la reseña escrito por el usuario. Puede ser largo, por eso se usa TEXT.
     @Column(name = "contenido", columnDefinition = "TEXT")
