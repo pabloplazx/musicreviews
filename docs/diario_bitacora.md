@@ -791,3 +791,78 @@ Ver detalle completo en [`integracion.md` § 5](integracion.md) y [`pruebas_post
 🔜 Paso 4: Rutas protegidas. Hoy `/favoritos`, `/admin`, `/crear-resena`, `/editar-perfil` son accesibles escribiendo la URL a mano aunque no haya sesión — el navbar las oculta pero la ruta no está protegida. Hay que crear un componente wrapper `<RutaProtegida>` que comprueba el contexto y redirige a `/login` si no hay usuario, y un `<RutaAdmin>` que además exija `rol === "ADMIN"`.
 
 Detalle paso a paso en [`integracion.md` § 4 y § 5](integracion.md).
+
+---
+
+## Semana 10 — Fase 4, sesión 3: Rutas protegidas (28/04/2026)
+
+**Fase:** FASE 4 — paso 4 del plan.
+
+### Objetivo
+
+Hasta ahora el navbar oculta los enlaces a páginas privadas, pero las rutas siguen siendo accesibles escribiendo la URL a mano. Hay que añadir protección **a nivel de ruta** con dos componentes wrapper que comprueben el contexto antes de renderizar.
+
+### Cambios
+
+| Fichero | Cambio |
+|---|---|
+| `src/components/routing/RutaProtegida.jsx` *(nuevo)* | Wrapper que comprueba `usuario !== null`. Sin sesión redirige a `/login` guardando `location.state.from`. Con sesión renderiza `<Outlet />`. |
+| `src/components/routing/RutaAdmin.jsx` *(nuevo)* | Igual + comprobación de rol. Sin sesión a `/login`, con sesión sin rol ADMIN a `/` (NO a `/login`, eso crea bucle). |
+| `src/App.jsx` | Rutas reagrupadas en 3 bloques: públicas, envueltas en `<RutaProtegida>`, envueltas en `<RutaAdmin>`. |
+| `src/pages/Login.jsx` | Lee `location.state.from` y tras login navega a esa URL en vez de a `/`. Con `{ replace: true }` para que `/login` no quede en el historial. |
+
+### Patrón usado
+
+```jsx
+<Route element={<RutaProtegida />}>
+  <Route path="/favoritos" element={<MisFavoritos />} />
+  <Route path="/crear-resena" element={<CrearResena />} />
+  ...
+</Route>
+```
+
+`<Outlet />` (de React Router) es la primitiva que indica "aquí va la ruta hija". Permite usar el wrapper como ruta padre sin tener que duplicar lógica en cada página privada.
+
+### Decisiones técnicas
+
+- **`state={{ from: location }}` al redirigir a `/login`**: para que tras autenticarse el usuario vuelva a la URL que intentaba abrir, no al home. Mejora la UX y es estándar de React Router.
+- **`replace` en `<Navigate>` y en `navigate()`**: evita que `/login` quede en el historial. Pulsar "atrás" tras autenticarse no devuelve al formulario completado.
+- **`RutaAdmin` redirige a `/` (no a `/login`) cuando hay sesión sin rol**: re-autenticarse no le daría rol ADMIN al usuario, y mandarlo a `/login` con `from = /admin` provoca bucle (tras login volvería a `/admin` y rebotaría otra vez).
+- **`location.state?.from?.pathname || "/"`**: optional chaining porque entrada directa a `/login` deja `location.state` a `null`.
+
+### Pruebas realizadas (5 casos)
+
+Frontend en `:5173` + backend Spring Boot en `:8080`, con dos usuarios de prueba:
+- `maria@musicreviews.com / maria123` → rol USER
+- `admin@musicreviews.com / admin123` → rol ADMIN (creado para esta prueba)
+
+| # | Caso | Esperado | Resultado |
+|---|---|---|---|
+| 1 | Sin sesión, URL directa a `/favoritos`, `/crear-resena`, `/editar-perfil`, `/admin` | Cada una redirige a `/login` | ✅ |
+| 2 | Sin sesión → `/favoritos` → login con maría | Tras login aterrizar en `/favoritos` (no `/`); pulsar atrás no vuelve a `/login` | ✅ |
+| 3 | Logueado con maría, URL directa a `/admin` | Redirige a `/` (no a `/login`); navbar sin link "Admin" | ✅ |
+| 4 | Logueado con admin, URL directa a `/admin` | Carga `PanelAdmin`; navbar muestra link "Admin"; avatar "A" lleva a `/perfil/admin` | ✅ |
+| 5 | Rutas públicas (`/catalogo`, `/rankings`, `/album/:id`, `/perfil/maria_indie`...) con o sin sesión | Cargan normal en ambos casos | ✅ |
+
+### Creación del usuario admin
+
+`POST /api/auth/register` siempre crea con `rol = USER` (lo fija el `@PrePersist` de `Usuario.java`). Para tener un admin de prueba:
+
+1. Registrar via API: `curl -X POST /api/auth/register -d '{"username":"admin","email":"admin@musicreviews.com","password":"admin123"}'` → `id: 10, rol: USER`.
+2. Promocionar con SQL en Aiven (vía MySQL Shell): `UPDATE usuario SET rol = 'ADMIN' WHERE email = 'admin@musicreviews.com';`.
+
+No hay endpoint de promoción a propósito: sería un agujero de seguridad. La asignación de roles siempre debe ser operativa (DBA o panel admin con verificación de rol).
+
+### Limitaciones conocidas (a propósito, fuera del paso 4)
+
+- **El backend no comprueba el rol en endpoints administrativos** — todavía. Cuando el panel admin se conecte de verdad habrá que comprobar `SecurityConfig` y añadir `.hasRole("ADMIN")` donde toque. La protección del frontend no es suficiente: un usuario podría llamar al endpoint con su token sin pasar por la UI.
+- **Verificación de email**: no implementada. Cualquiera puede registrarse con un email inventado. Es una limitación conocida y aceptable para un TFG académico, mencionable como ampliación futura.
+- **El logout no invalida el JWT en el servidor**, solo lo borra del cliente. JWT puro no permite invalidación; haría falta blacklist o tokens de corta vida + refresh. Fuera del ámbito del TFG.
+
+### Estado al cerrar la sesión
+
+✅ Pasos 1, 2, 3 y 4 completos.
+✅ Protecciones por rol funcionando en los dos lados (UI: navbar oculta; ruta: redirección).
+🔜 Paso 5: Páginas públicas con datos reales. Catálogo, Búsqueda, Rankings, Detalle de álbum y de artista hoy usan datos mock dentro de cada componente. Hay que reemplazarlos por llamadas a `GET /api/albumes`, `/api/artistas`, `/api/estadisticas/*` y manejar estados de carga / error.
+
+Detalle completo en [`integracion.md` § 6](integracion.md).

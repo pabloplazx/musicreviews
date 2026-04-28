@@ -829,7 +829,240 @@ B1-B5 fueron bugs del **backend** detectados al integrar. B6 es del **frontend**
 
 ---
 
-## 6. Resumen de cambios durante esta sesión
+## 6. Paso 4 — Rutas protegidas
+
+### El problema que resuelve
+
+Tras el paso 3 el navbar ya **oculta** los enlaces a páginas privadas cuando no hay sesión, pero las rutas siguen siendo accesibles **escribiendo la URL a mano**. Cualquiera podía ir a `localhost:5173/favoritos` o `/admin` y ver la página (con datos mock todavía, pero sería igual de inseguro cuando se conecten al backend).
+
+La protección de la UI no es protección de verdad. La protección de verdad la hace el backend con JWT — sin un Bearer válido, los endpoints privados devuelven 401. Pero el frontend también debe colaborar para no enseñar pantallas que el usuario nunca debería ver, y para llevarlo al login cuando intenta entrar a algo privado en vez de mostrar errores.
+
+El paso 4 añade **dos componentes wrapper** que se pueden envolver alrededor de cualquier conjunto de rutas:
+
+| Wrapper | Comprueba | Si falla |
+|---|---|---|
+| `<RutaProtegida>` | `usuario !== null` | Redirige a `/login` recordando la URL original |
+| `<RutaAdmin>` | `usuario !== null && usuario.rol === "ADMIN"` | Sin sesión: a `/login`. Con sesión sin rol: a `/` |
+
+### Anatomía de `<RutaProtegida>`
+
+`src/components/routing/RutaProtegida.jsx`:
+
+```jsx
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+
+export default function RutaProtegida() {
+  const { usuario } = useAuth();
+  const location = useLocation();
+
+  if (!usuario) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <Outlet />;
+}
+```
+
+Cuatro decisiones a destacar:
+
+**1. `<Outlet />` cuando hay sesión.** `Outlet` es la primitiva de React Router para "aquí se renderiza la ruta hija". Es lo que hace que el wrapper se pueda usar como ruta padre y meter las rutas privadas dentro:
+
+```jsx
+<Route element={<RutaProtegida />}>
+  <Route path="/favoritos" element={<MisFavoritos />} />
+  <Route path="/crear-resena" element={<CrearResena />} />
+  ...
+</Route>
+```
+
+Sin sesión, el wrapper retorna `<Navigate>` y `<Outlet />` ni se ejecuta. Con sesión, el `<Outlet />` se sustituye por el `<MisFavoritos />` o el componente que toque.
+
+**2. `state={{ from: location }}` al redirigir.** Esto guarda la URL original en el estado de navegación. Sin esto, el usuario que iba a `/favoritos` y fue rebotado a `/login` aterrizaría en `/` tras autenticarse — perdiendo el contexto. Con esto, `Login.jsx` lee `location.state.from` y vuelve allí.
+
+**3. `replace` en el `<Navigate>`.** Por defecto, una redirección añade la entrada `/login` al historial del navegador. Si el usuario pulsa "atrás" tras autenticarse, vuelve al formulario que ya completó — confuso. `replace` sustituye la entrada actual por `/login` en lugar de añadirla, así "atrás" salta directamente a la página anterior.
+
+**4. `useLocation()` para capturar la ubicación actual.** No basta con `window.location.pathname` porque queremos también `search` (query string) y `state` (si los hubiera). El hook devuelve un objeto rico que se puede pasar tal cual.
+
+### Anatomía de `<RutaAdmin>`
+
+`src/components/routing/RutaAdmin.jsx`:
+
+```jsx
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+
+export default function RutaAdmin() {
+  const { usuario } = useAuth();
+  const location = useLocation();
+
+  if (!usuario) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  if (usuario.rol !== "ADMIN") {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+}
+```
+
+La parte interesante es **por qué un USER se redirige a `/` y no a `/login`**:
+
+- `RutaProtegida` redirige a `/login` cuando `!usuario` porque la solución del problema es que se autentique. Tiene sentido pedirle credenciales.
+- `RutaAdmin` cuando hay `usuario` pero no es admin **no puede arreglarse re-autenticando** — ya está autenticado, y autenticarse de nuevo le devolvería el mismo rol USER. Mandarlo a `/login` sería frustrante y crea bucle: tras login volvería a `/admin` y rebotaría otra vez.
+
+Por la misma razón, **no se guarda `from` cuando se redirige a `/`**: si lo guardáramos y el usuario después hace login (cosa que no necesita, ya estaba logueado), volvería a `/admin` y rebotaría infinitamente. Cortar el bucle redirigiendo al home es la decisión correcta.
+
+### Cambios en `App.jsx`
+
+Antes:
+
+```jsx
+<Routes>
+  <Route path="/" element={<Inicio />} />
+  <Route path="/favoritos" element={<MisFavoritos />} />
+  <Route path="/admin" element={<PanelAdmin />} />
+  ... // todas planas, todas accesibles
+</Routes>
+```
+
+Ahora:
+
+```jsx
+<Routes>
+  {/* Públicas */}
+  <Route path="/" element={<Inicio />} />
+  <Route path="/login" element={<Login />} />
+  <Route path="/registro" element={<Registro />} />
+  <Route path="/catalogo" element={<Catalogo />} />
+  <Route path="/rankings" element={<Rankings />} />
+  <Route path="/busqueda" element={<Busqueda />} />
+  <Route path="/album/:id" element={<DetalleAlbum />} />
+  <Route path="/artista/:id" element={<DetalleArtista />} />
+  <Route path="/perfil/:username" element={<PerfilUsuario />} />
+
+  {/* Protegidas */}
+  <Route element={<RutaProtegida />}>
+    <Route path="/favoritos" element={<MisFavoritos />} />
+    <Route path="/crear-resena" element={<CrearResena />} />
+    <Route path="/editar-resena" element={<EditarResena />} />
+    <Route path="/editar-perfil" element={<EditarPerfil />} />
+  </Route>
+
+  {/* Solo ADMIN */}
+  <Route element={<RutaAdmin />}>
+    <Route path="/admin" element={<PanelAdmin />} />
+  </Route>
+
+  <Route path="*" element={<NotFound />} />
+</Routes>
+```
+
+Detalles a notar:
+
+- Las rutas protegidas siguen teniendo **paths absolutos** (`/favoritos`, no `favoritos`). React Router lo permite porque la ruta padre del wrapper no tiene `path`. Si el padre tuviera `path="/privado"`, las hijas tendrían que ser relativas (`favoritos` se montaría como `/privado/favoritos`).
+- `/perfil/:username` queda **pública** a propósito. Es como un perfil público de Letterboxd: cualquiera puede ver el perfil de otra persona. La página de **editar** perfil (`/editar-perfil`) sí es privada porque modifica datos.
+- `/login` y `/registro` se quedan en el bloque público porque se accede a ellas precisamente cuando no hay sesión.
+
+### Cambios en `Login.jsx`
+
+```jsx
+import { useNavigate, useLocation } from "react-router-dom";
+
+export default function Login() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Si venimos rebotados desde una RutaProtegida, volver a la URL original.
+  // Si no (entrada directa), al home.
+  const from = location.state?.from?.pathname || "/";
+
+  async function handleSubmit(e) {
+    // ...
+    await login(email, password);
+    navigate(from, { replace: true });
+  }
+}
+```
+
+**Optional chaining `location.state?.from?.pathname`**: cuando el usuario entra directamente a `/login` (no rebotado), `location.state` es `null` y `null.from` lanzaría `TypeError`. Con `?.` la cadena se evalúa a `undefined` y el fallback `|| "/"` toma el control.
+
+**`{ replace: true }` también aquí**: tras login no queremos que `/login` quede en el historial. Sin esto, pulsar "atrás" volvería al formulario que ya completó.
+
+### Verificación — pruebas manuales realizadas
+
+Probado con `npm run dev` (frontend en `:5173`) + backend de Spring Boot en `:8080`. María (USER, id=5) y admin (ADMIN, id=10) son los usuarios de prueba.
+
+#### Caso 1: sin sesión, ruta protegida → rebote a `/login`
+
+| Acción | Esperado | Resultado |
+|---|---|---|
+| Sin sesión, escribir `localhost:5173/favoritos` en URL | Redirige a `/login` | ✅ |
+| Sin sesión, escribir `localhost:5173/crear-resena` | Redirige a `/login` | ✅ |
+| Sin sesión, escribir `localhost:5173/editar-perfil` | Redirige a `/login` | ✅ |
+| Sin sesión, escribir `localhost:5173/admin` | Redirige a `/login` | ✅ |
+
+#### Caso 2: sin sesión → ruta protegida → login → vuelta a la ruta original
+
+| Acción | Esperado | Resultado |
+|---|---|---|
+| Sin sesión, ir a `/favoritos`, login con maría | Tras login, aterrizar en `/favoritos` (no en `/`) | ✅ |
+| Sin sesión, ir a `/crear-resena`, login con maría | Tras login, aterrizar en `/crear-resena` | ✅ |
+| Pulsar "atrás" del navegador tras login | NO vuelve a `/login` (gracias a `replace`) | ✅ |
+
+#### Caso 3: USER intenta acceder a ruta admin → rebote a `/`
+
+| Acción | Esperado | Resultado |
+|---|---|---|
+| Logueado con maría, escribir `localhost:5173/admin` | Redirige a `/` (no a `/login`) | ✅ |
+| Logueado con maría, navbar | Sin link "Admin" visible | ✅ |
+
+#### Caso 4: ADMIN accede a ruta admin → entra normal
+
+| Acción | Esperado | Resultado |
+|---|---|---|
+| Logueado con admin, escribir `localhost:5173/admin` | Carga `PanelAdmin.jsx` | ✅ |
+| Logueado con admin, navbar | Link "Admin" visible entre los links de navegación | ✅ |
+| Click en avatar "A" | Lleva a `/perfil/admin` | ✅ |
+
+#### Caso 5: rutas públicas siguen funcionando con o sin sesión
+
+| Acción | Esperado | Resultado |
+|---|---|---|
+| Sin sesión, `/catalogo`, `/rankings`, `/busqueda`, `/album/:id`, `/artista/:id`, `/perfil/maria_indie` | Cargan normal | ✅ |
+| Logueado, esas mismas rutas | Cargan normal | ✅ |
+
+### Creación del usuario admin para las pruebas
+
+`POST /api/auth/register` siempre crea con `rol = USER` (lo fija el `@PrePersist` de `Usuario.java`). Para tener un admin:
+
+1. Registrar el usuario via API:
+   ```bash
+   curl -X POST http://localhost:8080/api/auth/register \
+     -H "Content-Type: application/json" \
+     -d '{"username":"admin","email":"admin@musicreviews.com","password":"admin123"}'
+   ```
+   Devuelve `{token, id:10, username, email, rol:"USER"}`.
+
+2. Promocionarlo a ADMIN con SQL directo en la BD de Aiven (vía MySQL Shell):
+   ```sql
+   UPDATE usuario SET rol = 'ADMIN' WHERE email = 'admin@musicreviews.com';
+   ```
+
+Tras esto, login con `admin@musicreviews.com / admin123` da `rol: ADMIN` en la respuesta y el frontend lo trata como tal.
+
+**Por qué no hay endpoint para promover a admin:** sería un agujero de seguridad. La asignación de roles siempre es operativa (DBA o panel admin). Es la convención correcta — el panel admin del frontend (`/admin`) podría incluir esta funcionalidad si quisiéramos, exigiendo que quien la ejecuta ya sea admin.
+
+### Lo que NO está hecho aún (a propósito)
+
+- **El backend no comprueba el rol en el endpoint del PanelAdmin** (cuando lo conectemos en el paso siguiente). El usuario sigue pudiendo llamar a la API directamente con su token. El frontend protegido no es suficiente — la protección real la hace `SecurityConfig` con `.hasRole("ADMIN")` en los `requestMatchers`. Esto ya está hecho para `/api/artistas/**`, `/api/albumes/**` POST/PUT/DELETE; cuando el panel admin haga llamadas administrativas se verá si hace falta más.
+- **No hay refresh token.** El JWT expira a las 24h. Tras eso, el usuario tendrá que volver a hacer login. En un proyecto real se implementaría un refresh token con rotación; aquí no aplica al ámbito del TFG.
+- **El logout no invalida el token en el servidor**, solo lo borra del cliente. JWT puro no permite invalidación; haría falta una blacklist en el servidor o sesiones de stateless con expiración corta + refresh. Mismo razonamiento que arriba: fuera del ámbito.
+
+---
+
+## 7. Resumen de cambios durante esta sesión
 
 ### Backend
 
@@ -854,23 +1087,27 @@ B1-B5 fueron bugs del **backend** detectados al integrar. B6 es del **frontend**
 | `pages/Login.jsx`, `pages/Registro.jsx` | Conectados a `useAuth()` con manejo de error y estado de carga | Paso 2 |
 | `components/layout/Navbar.jsx` | Renderizado condicional según `usuario`, logout, avatar real, link Admin condicional | Paso 3 |
 | `components/ui/FormInput.jsx` | Propagar `{...rest}` al `<input>` para que value/onChange funcionen | B6 |
+| `components/routing/RutaProtegida.jsx` *(nuevo)* | Wrapper que redirige a `/login` si no hay sesión y guarda la URL original en `location.state.from` | Paso 4 |
+| `components/routing/RutaAdmin.jsx` *(nuevo)* | Wrapper que exige `rol === "ADMIN"`. Sin sesión a `/login`, con sesión sin rol a `/` (evita bucle) | Paso 4 |
+| `App.jsx` | Reagrupar rutas en 3 bloques: públicas, protegidas (envueltas en `<RutaProtegida>`) y admin (envueltas en `<RutaAdmin>`) | Paso 4 |
+| `pages/Login.jsx` | Leer `location.state.from` y volver a esa URL tras login (con `replace`) | Paso 4 |
 | **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
 
-**6 ficheros tocados + 10 borrados de basura/docs antiguos.**
+**8 ficheros tocados + 2 nuevos + 10 borrados de basura/docs antiguos.**
 
 ---
 
-## 7. Estado al cerrar esta entrega
+## 8. Estado al cerrar esta entrega
 
 ✅ **Paso 1 (AuthContext) completo.**
-✅ **Paso 2 (Login + Registro funcionales contra el backend) completo** — incluye el fix de B6 (FormInput sin propagar `value`/`onChange`), descubierto al hacer el primer login real desde el navegador.
-✅ **Paso 3 (Navbar dinámico) completo** — primer consumo de `useAuth()` fuera de los formularios de auth. Renderizado condicional sin/con sesión, logout funcional, avatar real con username del usuario, link Admin condicionado al rol.
-✅ **Login end-to-end verificado en el navegador** (no solo Postman): maría inicia sesión desde el formulario, el navbar reacciona, la sesión persiste al refrescar y el logout funciona.
+✅ **Paso 2 (Login + Registro funcionales contra el backend) completo** — incluye el fix de B6 (FormInput sin propagar `value`/`onChange`).
+✅ **Paso 3 (Navbar dinámico) completo** — renderizado condicional sin/con sesión, logout funcional, avatar real, link Admin condicionado al rol.
+✅ **Paso 4 (Rutas protegidas) completo** — wrappers `<RutaProtegida>` y `<RutaAdmin>` con redirección a `/login` recordando la URL original (`location.state.from`) y vuelta a ella tras autenticar. 5 casos de prueba manuales verificados (sin sesión rebota, USER no entra a admin, ADMIN entra, rutas públicas siguen funcionando).
 ✅ **Backend con 5 bugs arreglados y todas las relaciones LAZY serializando correctamente.**
 ✅ **38/38 tests unitarios verdes.**
 ✅ **Postman documentado con flujo end-to-end del login + CRUD de reseñas y favoritos.**
 
-🔜 **Siguiente: paso 4 (Rutas protegidas).** Hoy `/favoritos`, `/admin`, `/crear-resena`, `/editar-perfil` son accesibles aunque no haya sesión escribiendo la URL a mano — solo están "ocultas" en el navbar. Hay que crear un componente `<RutaProtegida>` que comprueba el contexto y redirige a `/login` si no hay usuario, y un `<RutaAdmin>` que además exija `rol === "ADMIN"`.
+🔜 **Siguiente: paso 5 (Páginas públicas con datos reales).** Catálogo, Búsqueda, Rankings, Detalle de álbum y Detalle de artista hoy usan **datos mock** definidos en arrays dentro de cada componente. Hay que reemplazarlos por llamadas a los endpoints públicos del backend (`GET /api/albumes`, `/api/artistas`, `/api/estadisticas/*`) y manejar los estados de carga / error. Es la primera vez que el frontend va a consumir datos reales que no son de auth.
 
 ---
 
