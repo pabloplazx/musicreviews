@@ -1,9 +1,11 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.AccesoDenegadoException;
 import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.model.Favorito;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.FavoritoRepository;
+import com.musicreviews.backend.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -21,25 +24,31 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class FavoritoServiceTest {
 
-    // Mock del repositorio — simula la BD sin conectarse a ella.
+    private static final String EMAIL = "test@test.com";
+    private static final String OTRO_EMAIL = "otro@test.com";
+
     @Mock
     private FavoritoRepository favoritoRepository;
 
-    // Mock del EntityManager — necesario porque FavoritoService lo usa para refresh() tras save().
+    // El servicio consulta UsuarioRepository en agregar/eliminar para resolver el id del
+    // usuario autenticado a partir del email del JWT.
+    @Mock
+    private UsuarioRepository usuarioRepository;
+
     @Mock
     private EntityManager entityManager;
 
-    // Servicio real con los mocks inyectados.
     @InjectMocks
     private FavoritoService favoritoService;
 
     private Favorito favorito;
+    private Usuario usuario;
 
-    // Esto prepara los objetos de prueba antes de cada test.
     @BeforeEach
     void setUp() {
-        Usuario usuario = new Usuario();
+        usuario = new Usuario();
         usuario.setId(1L);
+        usuario.setEmail(EMAIL);
 
         Album album = new Album();
         album.setId(1L);
@@ -52,71 +61,95 @@ class FavoritoServiceTest {
 
     // --- TESTS DE agregar() ---
 
-    // Esto verifica que añadir un favorito nuevo llama a save y refresh.
     @Test
     void agregar_conFavoritoNuevo_guardaCorrectamente() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
         when(favoritoRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(false);
         when(favoritoRepository.save(favorito)).thenReturn(favorito);
         doNothing().when(entityManager).refresh(favorito);
 
-        Favorito resultado = favoritoService.agregar(favorito);
+        Favorito resultado = favoritoService.agregar(favorito, EMAIL, false);
 
         assertNotNull(resultado);
         verify(favoritoRepository).save(favorito);
         verify(entityManager).refresh(favorito);
     }
 
-    // Esto verifica que añadir un álbum que ya está en favoritos lanza excepción.
     @Test
     void agregar_conFavoritoYaExistente_lanzaExcepcion() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
         when(favoritoRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(true);
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> favoritoService.agregar(favorito));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> favoritoService.agregar(favorito, EMAIL, false));
         assertEquals("El álbum ya está en favoritos", ex.getMessage());
+        verify(favoritoRepository, never()).save(any());
+    }
+
+    // Verificación de propiedad: maría no puede añadir favoritos a la lista de carlos.
+    @Test
+    void agregar_paraOtroUsuario_lanzaAccesoDenegada() {
+        Usuario otro = new Usuario();
+        otro.setId(2L);
+        otro.setEmail(OTRO_EMAIL);
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(otro));
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> favoritoService.agregar(favorito, EMAIL, false));
+        assertEquals("Solo puedes gestionar tus propios favoritos", ex.getMessage());
         verify(favoritoRepository, never()).save(any());
     }
 
     // --- TESTS DE eliminar() ---
 
-    // Esto verifica que eliminar un favorito existente llama a deleteByUsuarioIdAndAlbumId.
     @Test
     void eliminar_conFavoritoExistente_eliminaCorrectamente() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
         when(favoritoRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(true);
 
-        favoritoService.eliminar(1L, 1L);
+        favoritoService.eliminar(1L, 1L, EMAIL, false);
 
         verify(favoritoRepository).deleteByUsuarioIdAndAlbumId(1L, 1L);
     }
 
-    // Esto verifica que eliminar un favorito que no existe lanza excepción.
     @Test
     void eliminar_conFavoritoInexistente_lanzaExcepcion() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
         when(favoritoRepository.existsByUsuarioIdAndAlbumId(1L, 99L)).thenReturn(false);
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> favoritoService.eliminar(1L, 99L));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> favoritoService.eliminar(1L, 99L, EMAIL, false));
         assertEquals("El álbum no está en favoritos", ex.getMessage());
+        verify(favoritoRepository, never()).deleteByUsuarioIdAndAlbumId(any(), any());
+    }
+
+    @Test
+    void eliminar_deOtroUsuario_lanzaAccesoDenegada() {
+        Usuario otro = new Usuario();
+        otro.setId(2L);
+        otro.setEmail(OTRO_EMAIL);
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(otro));
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> favoritoService.eliminar(1L, 1L, EMAIL, false));
+        assertEquals("Solo puedes gestionar tus propios favoritos", ex.getMessage());
         verify(favoritoRepository, never()).deleteByUsuarioIdAndAlbumId(any(), any());
     }
 
     // --- TESTS DE esFavorito() y obtenerPorUsuario() ---
 
-    // Esto verifica que esFavorito devuelve true cuando el repositorio lo confirma.
     @Test
     void esFavorito_cuandoExiste_devuelveTrue() {
         when(favoritoRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(true);
-
         assertTrue(favoritoService.esFavorito(1L, 1L));
     }
 
-    // Esto verifica que esFavorito devuelve false cuando el álbum no está en favoritos.
     @Test
     void esFavorito_cuandoNoExiste_devuelveFalse() {
         when(favoritoRepository.existsByUsuarioIdAndAlbumId(1L, 99L)).thenReturn(false);
-
         assertFalse(favoritoService.esFavorito(1L, 99L));
     }
 
-    // Esto verifica que obtenerPorUsuario delega correctamente en el repositorio.
     @Test
     void obtenerPorUsuario_devuelveLista() {
         when(favoritoRepository.findByUsuarioId(1L)).thenReturn(List.of(favorito));

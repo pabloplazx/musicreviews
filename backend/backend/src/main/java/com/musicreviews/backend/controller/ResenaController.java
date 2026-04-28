@@ -6,6 +6,7 @@ import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.service.ResenaService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -39,22 +40,31 @@ public class ResenaController {
                 .orElseThrow(() -> new RecursoNoEncontradoException("Reseña no encontrada")));
     }
 
-    // POST /api/resenas → crea una reseña. Valida puntuación (1-5) y que no exista duplicado.
+    // POST /api/resenas → crea una reseña. Valida puntuación (0.5-5), duplicado y que el
+    // usuarioId del body coincide con el del token (un usuario no puede crear reseñas en
+    // nombre de otro). 403 si se intenta suplantar.
     @PostMapping
-    public ResponseEntity<Resena> crear(@RequestBody Resena resena) {
-        return ResponseEntity.ok(resenaService.crear(resena));
+    public ResponseEntity<Resena> crear(@RequestBody Resena resena, Authentication auth) {
+        return ResponseEntity.ok(resenaService.crear(resena, auth.getName(), esAdmin(auth)));
     }
 
-    // PUT /api/resenas/{id} → actualiza puntuación y comentario. 400 si puntuación inválida, 404 si no existe.
+    // PUT /api/resenas/{id} → actualiza puntuación y comentario. Solo el dueño o ADMIN.
+    // 400 si puntuación inválida, 403 si no es dueño, 404 si no existe.
     @PutMapping("/{id}")
-    public ResponseEntity<Resena> actualizar(@PathVariable Long id, @RequestBody Resena datos) {
-        return ResponseEntity.ok(resenaService.actualizar(id, datos));
+    public ResponseEntity<Resena> actualizar(@PathVariable Long id, @RequestBody Resena datos, Authentication auth) {
+        return ResponseEntity.ok(resenaService.actualizar(id, datos, auth.getName(), esAdmin(auth)));
     }
 
-    // DELETE /api/resenas/{id} → elimina una reseña. 204 si ok, 404 si no existe.
+    // DELETE /api/resenas/{id} → elimina una reseña. Solo el dueño o ADMIN.
+    // 204 si ok, 403 si no es dueño, 404 si no existe.
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        resenaService.eliminar(id);
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, Authentication auth) {
+        resenaService.eliminar(id, auth.getName(), esAdmin(auth));
         return ResponseEntity.noContent().build();
+    }
+
+    private boolean esAdmin(Authentication auth) {
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 }

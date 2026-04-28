@@ -1,5 +1,6 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.AccesoDenegadoException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.UsuarioRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -77,7 +78,6 @@ class UsuarioServiceTest {
 
     // --- TESTS DE actualizar() ---
 
-    // Esto verifica que actualizar un usuario existente modifica sus campos correctamente.
     @Test
     void actualizar_conIdExistente_actualizaCampos() {
         Usuario datosNuevos = new Usuario();
@@ -88,40 +88,79 @@ class UsuarioServiceTest {
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
         when(usuarioRepository.save(usuario)).thenReturn(usuario);
 
-        Usuario resultado = usuarioService.actualizar(1L, datosNuevos);
+        Usuario resultado = usuarioService.actualizar(1L, datosNuevos, "pablo@test.com", false);
 
         assertEquals("pablo_nuevo", resultado.getUsername());
         assertEquals("Nueva bio", resultado.getBio());
     }
 
-    // Esto verifica que actualizar un usuario que no existe lanza excepción.
     @Test
     void actualizar_conIdInexistente_lanzaExcepcion() {
         when(usuarioRepository.findById(99L)).thenReturn(Optional.empty());
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> usuarioService.actualizar(99L, usuario));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> usuarioService.actualizar(99L, usuario, "pablo@test.com", false));
         assertEquals("Usuario no encontrado", ex.getMessage());
+    }
+
+    // Verificación de propiedad: nadie puede editar un perfil que no es el suyo (salvo ADMIN).
+    @Test
+    void actualizar_perfilDeOtro_lanzaAccesoDenegada() {
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> usuarioService.actualizar(1L, usuario, "otro@test.com", false));
+        assertEquals("Solo puedes editar tu propio perfil", ex.getMessage());
+        verify(usuarioRepository, never()).save(any());
+    }
+
+    @Test
+    void actualizar_comoAdmin_permitidoEnPerfilDeOtro() {
+        Usuario datosNuevos = new Usuario();
+        datosNuevos.setUsername("editado_por_admin");
+
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.save(usuario)).thenReturn(usuario);
+
+        assertDoesNotThrow(() -> usuarioService.actualizar(1L, datosNuevos, "admin@test.com", true));
     }
 
     // --- TESTS DE eliminar() ---
 
-    // Esto verifica que eliminar un usuario existente llama a deleteById.
     @Test
     void eliminar_conIdExistente_eliminaCorrectamente() {
-        when(usuarioRepository.existsById(1L)).thenReturn(true);
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
 
-        usuarioService.eliminar(1L);
+        usuarioService.eliminar(1L, "pablo@test.com", false);
 
         verify(usuarioRepository).deleteById(1L);
     }
 
-    // Esto verifica que eliminar un usuario inexistente lanza excepción.
     @Test
     void eliminar_conIdInexistente_lanzaExcepcion() {
-        when(usuarioRepository.existsById(99L)).thenReturn(false);
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.empty());
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> usuarioService.eliminar(99L));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> usuarioService.eliminar(99L, "pablo@test.com", false));
         assertEquals("Usuario no encontrado", ex.getMessage());
         verify(usuarioRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void eliminar_cuentaDeOtro_lanzaAccesoDenegada() {
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> usuarioService.eliminar(1L, "otro@test.com", false));
+        assertEquals("Solo puedes borrar tu propia cuenta", ex.getMessage());
+        verify(usuarioRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void eliminar_comoAdmin_permitidoEnCuentaDeOtro() {
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
+
+        assertDoesNotThrow(() -> usuarioService.eliminar(1L, "admin@test.com", true));
+        verify(usuarioRepository).deleteById(1L);
     }
 }

@@ -32,7 +32,7 @@ MusicReviews_TFG/
 │       │   ├── SecurityConfig.java
 │       │   └── README.md         ← Documentación completa de la API
 │       ├── src/test/java/com/musicreviews/backend/
-│       │   └── service/          ← 37 tests unitarios (JUnit 5 + Mockito)
+│       │   └── service/          ← 50 tests unitarios (JUnit 5 + Mockito) — 38 base + 12 de la auditoría de seguridad
 │       └── src/main/resources/
 │           └── application.properties.example
 ├── database/
@@ -44,7 +44,8 @@ MusicReviews_TFG/
     ├── diagrama_clases.png
     ├── diagrama_casos_uso.png
     ├── diario_bitacora.md         ← Bitácora semanal de todo el desarrollo (fases 1-4)
-    ├── tests_unitarios.md         ← Documentación completa de los 38 tests unitarios
+    ├── tests_unitarios.md         ← Documentación completa de los 50 tests unitarios
+    ├── auditoria_seguridad.md     ← Auditoría de seguridad (28/04/2026): proceso, mitigación, resultado
     ├── pruebas_postman.md         ← Pruebas Postman, bugs encontrados y resueltos (incl. B1-B5 de fase 4)
     ├── migracion_aiven.md         ← Proceso de migración de BD local a Aiven (MySQL cloud)
     ├── seguridad_autenticacion.md ← JWT, BCrypt, CORS y protección de contraseñas
@@ -112,13 +113,13 @@ python -X utf8 database/seed_data.py
 
 ## Tests
 
-El backend cuenta con **37 tests unitarios** (+ 1 test de contexto) que cubren la lógica de negocio principal:
+El backend cuenta con **50 tests unitarios** que cubren la lógica de negocio principal y la verificación de propiedad de recursos (auditoría de seguridad del 28/04):
 
 | Clase de test | Tests | Qué cubre |
 |---|---|---|
-| `ResenaServiceTest` | 11 | Crear, actualizar, eliminar reseñas — validaciones y duplicados |
-| `UsuarioServiceTest` | 7 | Registro, actualización, login, desactivación |
-| `FavoritoServiceTest` | 7 | Agregar, eliminar, listar favoritos |
+| `ResenaServiceTest` | 17 | CRUD + validaciones + duplicados + verificación de propiedad (owner/admin) |
+| `UsuarioServiceTest` | 11 | Registro, actualización (con verificación), eliminación (con verificación) |
+| `FavoritoServiceTest` | 9 | CRUD de favoritos + verificación de propiedad |
 | `ArtistaServiceTest` | 7 | CRUD de artistas |
 | `EstadisticasServiceTest` | 5 | Rankings, top álbumes, estadísticas generales |
 | `BackendApplicationTests` | 1 | Carga del contexto de Spring Boot |
@@ -157,6 +158,7 @@ Todos los endpoints devuelven errores en formato JSON uniforme gracias al `Globa
 - **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
 - **Frontend (proceso, decisiones de diseño):** `docs/frontend.md`
 - **Integración frontend ↔ backend (fase 4):** `docs/integracion.md`
+- **Auditoría de seguridad y endurecimiento:** `docs/auditoria_seguridad.md`
 - **Guía de clases Tailwind:** `docs/tailwind-guide.md`
 - **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
 - **Migración de la BD a Aiven:** `docs/migracion_aiven.md`
@@ -169,7 +171,9 @@ Todos los endpoints devuelven errores en formato JSON uniforme gracias al `Globa
 
 ## Estado del proyecto
 
-- **Backend:** completado y desplegable. **38/38 tests verdes.** API REST funcional con JWT, integración Spotify y Last.fm, panel admin con endpoints específicos (PATCH `/usuarios/{id}/activo`), búsqueda unificada (`?q=`), orden parametrizable (`?sort=`). Ver `docs/diario_bitacora.md` para el historial.
-- **Frontend:** 15 pantallas implementadas + integración 100% terminada con el backend (repo `musicreviews-frontend`). Fase 4 cerrada en 9 pasos — desde AuthContext hasta panel admin funcional con CRUD de usuarios, artistas y moderación de reseñas. Ver `docs/integracion.md`.
+- **Backend:** completado y desplegable. **50/50 tests verdes** (38 anteriores + 12 nuevos de la auditoría de seguridad). API REST funcional con JWT, **tres capas de seguridad** (autenticación + roles + verificación de propiedad), integración Spotify y Last.fm, panel admin con endpoints específicos (PATCH `/usuarios/{id}/activo`), búsqueda unificada (`?q=`), orden parametrizable (`?sort=`). Ver `docs/diario_bitacora.md` para el historial.
+- **Frontend:** 15 pantallas implementadas + integración 100% terminada con el backend (repo `musicreviews-frontend`). Fase 4 cerrada en 9 pasos + auditoría — desde AuthContext hasta panel admin funcional con CRUD de usuarios, artistas y moderación de reseñas. Ver `docs/integracion.md`.
 
-**Limitaciones conocidas y documentadas honestamente** (todas con justificación de alcance del TFG): sin verificación de email, sin cambio de contraseña, sin subida real de archivos (URL como workaround), `DELETE /api/resenas/{id}` no verifica owner/admin en el backend, sin "seguir artista", sin orden "Mejor valorados" en catálogo (requiere agregado de reseñas). Ver `docs/integracion.md § 13` para la lista completa con causas y referencias a las secciones donde se discuten.
+**Auditoría de seguridad (28/04/2026):** revisión crítica del backend antes de la defensa. Detectó y corrigió 6 vulnerabilidades de "falta de verificación de propiedad" (un usuario autenticado podía modificar recursos ajenos vía API directa). Tras el fix, todos los endpoints de modificación verifican que quien llama es **dueño del recurso o ADMIN**. Detalle completo del proceso (auditoría → análisis → mitigación → verificación → resultado) en `docs/auditoria_seguridad.md`.
+
+**Limitaciones conocidas y documentadas honestamente** (todas con justificación de alcance del TFG): sin verificación de email, sin cambio de contraseña, sin subida real de archivos (URL como workaround), sin "seguir artista", sin orden "Mejor valorados" en catálogo (requiere agregado de reseñas), sin tests de controller con MockMvc (cobertura por tests de service + Postman manual). Ver `docs/integracion.md § 13` y `docs/auditoria_seguridad.md § 7` para la lista completa con causas.

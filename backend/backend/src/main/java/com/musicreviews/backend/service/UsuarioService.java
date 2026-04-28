@@ -1,5 +1,6 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.AccesoDenegadoException;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
@@ -53,10 +54,16 @@ public class UsuarioService {
         return usuarioRepository.save(usuario);
     }
 
+    // Verifica que el usuario autenticado solo edita su propio perfil (o es ADMIN).
+    // Sin esta comprobación, maría con su token podría editar el perfil de carlos.
     @Transactional
-    public Usuario actualizar(Long id, Usuario datosActualizados) {
+    public Usuario actualizar(Long id, Usuario datosActualizados, String emailLlamante, boolean esAdmin) {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+
+        if (!esAdmin && !usuario.getEmail().equals(emailLlamante)) {
+            throw new AccesoDenegadoException("Solo puedes editar tu propio perfil");
+        }
 
         usuario.setUsername(datosActualizados.getUsername());
         usuario.setFotoPerfil(datosActualizados.getFotoPerfil());
@@ -84,10 +91,14 @@ public class UsuarioService {
     }
 
     @Transactional
-    public void eliminar(Long id) {
-        if (!usuarioRepository.existsById(id)) {
-            throw new RecursoNoEncontradoException("Usuario no encontrado");
+    public void eliminar(Long id, String emailLlamante, boolean esAdmin) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+
+        if (!esAdmin && !usuario.getEmail().equals(emailLlamante)) {
+            throw new AccesoDenegadoException("Solo puedes borrar tu propia cuenta");
         }
+
         usuarioRepository.deleteById(id);
     }
 }

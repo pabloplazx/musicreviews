@@ -5,6 +5,7 @@ import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.service.UsuarioService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -40,10 +41,11 @@ public class UsuarioController {
                 .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado")));
     }
 
-    // PUT /api/usuarios/{id} → actualiza username, foto de perfil y bio. No permite cambiar email ni contraseña.
+    // PUT /api/usuarios/{id} → actualiza username, foto de perfil y bio. Solo el dueño o ADMIN.
+    // No permite cambiar email ni contraseña.
     @PutMapping("/{id}")
-    public ResponseEntity<Usuario> actualizar(@PathVariable Long id, @RequestBody Usuario datos) {
-        return ResponseEntity.ok(usuarioService.actualizar(id, datos));
+    public ResponseEntity<Usuario> actualizar(@PathVariable Long id, @RequestBody Usuario datos, Authentication auth) {
+        return ResponseEntity.ok(usuarioService.actualizar(id, datos, auth.getName(), esAdmin(auth)));
     }
 
     // PATCH /api/usuarios/{id}/activo → activa o desactiva una cuenta. Solo ADMIN.
@@ -54,10 +56,15 @@ public class UsuarioController {
         return ResponseEntity.ok(usuarioService.cambiarActivo(id, activo));
     }
 
-    // DELETE /api/usuarios/{id} → elimina un usuario. 204 si ok, 404 si no existe.
+    // DELETE /api/usuarios/{id} → elimina un usuario. Solo el dueño o ADMIN.
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        usuarioService.eliminar(id);
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, Authentication auth) {
+        usuarioService.eliminar(id, auth.getName(), esAdmin(auth));
         return ResponseEntity.noContent().build();
+    }
+
+    private boolean esAdmin(Authentication auth) {
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
     }
 }

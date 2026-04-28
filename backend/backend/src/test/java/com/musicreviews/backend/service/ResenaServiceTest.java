@@ -1,9 +1,11 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.AccesoDenegadoException;
 import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.ResenaRepository;
+import com.musicreviews.backend.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,16 +25,20 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class ResenaServiceTest {
 
-    // Mock del repositorio — simula la BD sin conectarse a ella.
+    private static final String EMAIL = "test@test.com";
+    private static final String OTRO_EMAIL = "otro@test.com";
+
     @Mock
     private ResenaRepository resenaRepository;
 
-    // Mock del EntityManager — el servicio llama a refresh() tras save() en crear() para poblar
-    // las relaciones LAZY desde la BD. En el test el mock simplemente ignora la llamada.
+    // El servicio consulta UsuarioRepository en crear() para obtener el id del usuario
+    // autenticado a partir del email del JWT (verificación de propiedad).
+    @Mock
+    private UsuarioRepository usuarioRepository;
+
     @Mock
     private EntityManager entityManager;
 
-    // Servicio real con los mocks inyectados en lugar de las dependencias reales.
     @InjectMocks
     private ResenaService resenaService;
 
@@ -40,11 +46,11 @@ class ResenaServiceTest {
     private Usuario usuario;
     private Album album;
 
-    // Esto prepara los objetos de prueba antes de cada test.
     @BeforeEach
     void setUp() {
         usuario = new Usuario();
         usuario.setId(1L);
+        usuario.setEmail(EMAIL);
 
         album = new Album();
         album.setId(1L);
@@ -59,52 +65,81 @@ class ResenaServiceTest {
 
     // --- TESTS DE crear() ---
 
-    // Esto verifica que una reseña válida se guarda correctamente.
     @Test
     void crear_conDatosValidos_guardaYDevuelveResena() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
         when(resenaRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(false);
         when(resenaRepository.save(resena)).thenReturn(resena);
 
-        Resena resultado = resenaService.crear(resena);
+        Resena resultado = resenaService.crear(resena, EMAIL, false);
 
         assertNotNull(resultado);
         assertEquals(4.0, resultado.getPuntuacion());
         verify(resenaRepository).save(resena);
     }
 
-    // Esto verifica que una puntuación por debajo del mínimo lanza excepción.
     @Test
     void crear_conPuntuacionCero_lanzaExcepcion() {
         resena.setPuntuacion(0.0);
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> resenaService.crear(resena));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> resenaService.crear(resena, EMAIL, false));
         assertEquals("La puntuación debe estar entre 0.5 y 5", ex.getMessage());
         verify(resenaRepository, never()).save(any());
     }
 
-    // Esto verifica que una puntuación por encima del máximo lanza excepción.
     @Test
     void crear_conPuntuacionSeis_lanzaExcepcion() {
         resena.setPuntuacion(6.0);
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> resenaService.crear(resena));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> resenaService.crear(resena, EMAIL, false));
         assertEquals("La puntuación debe estar entre 0.5 y 5", ex.getMessage());
         verify(resenaRepository, never()).save(any());
     }
 
-    // Esto verifica que no se puede crear una segunda reseña del mismo usuario para el mismo álbum.
     @Test
     void crear_conResenaYaExistente_lanzaExcepcion() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
         when(resenaRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(true);
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> resenaService.crear(resena));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> resenaService.crear(resena, EMAIL, false));
         assertEquals("El usuario ya ha reseñado este álbum", ex.getMessage());
         verify(resenaRepository, never()).save(any());
     }
 
+    // Verificación de propiedad: si maría intenta crear una reseña con usuario.id de otro,
+    // se lanza AccesoDenegadoException.
+    @Test
+    void crear_conIdDeOtroUsuario_lanzaAccesoDenegada() {
+        Usuario otro = new Usuario();
+        otro.setId(2L);
+        otro.setEmail(OTRO_EMAIL);
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(otro));
+        // El email del token (EMAIL) corresponde a otro usuario (id=2), pero la reseña tiene
+        // usuario.id=1 → suplantación detectada.
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> resenaService.crear(resena, EMAIL, false));
+        assertEquals("Solo puedes crear reseñas en tu propio nombre", ex.getMessage());
+        verify(resenaRepository, never()).save(any());
+    }
+
+    // ADMIN puede crear en nombre de otro (excepción explícita para moderación).
+    @Test
+    void crear_comoAdmin_permitidoEnNombreDeOtro() {
+        when(resenaRepository.existsByUsuarioIdAndAlbumId(1L, 1L)).thenReturn(false);
+        when(resenaRepository.save(resena)).thenReturn(resena);
+
+        Resena resultado = resenaService.crear(resena, "admin@test.com", true);
+
+        assertNotNull(resultado);
+        verify(usuarioRepository, never()).findByEmail(any()); // como esAdmin no se consulta
+    }
+
     // --- TESTS DE actualizar() ---
 
-    // Esto verifica que actualizar una reseña existente con datos válidos funciona correctamente.
     @Test
     void actualizar_conDatosValidos_actualizaYDevuelveResena() {
         Resena datosNuevos = new Resena();
@@ -114,13 +149,12 @@ class ResenaServiceTest {
         when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
         when(resenaRepository.save(resena)).thenReturn(resena);
 
-        Resena resultado = resenaService.actualizar(1L, datosNuevos);
+        Resena resultado = resenaService.actualizar(1L, datosNuevos, EMAIL, false);
 
         assertEquals(5.0, resultado.getPuntuacion());
         assertEquals("Obra maestra", resultado.getComentario());
     }
 
-    // Esto verifica que actualizar con puntuación inválida lanza excepción.
     @Test
     void actualizar_conPuntuacionInvalida_lanzaExcepcion() {
         Resena datosNuevos = new Resena();
@@ -128,43 +162,84 @@ class ResenaServiceTest {
 
         when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
 
-        assertThrows(RuntimeException.class, () -> resenaService.actualizar(1L, datosNuevos));
+        assertThrows(RuntimeException.class,
+                () -> resenaService.actualizar(1L, datosNuevos, EMAIL, false));
         verify(resenaRepository, never()).save(any());
     }
 
-    // Esto verifica que actualizar una reseña que no existe lanza excepción.
     @Test
     void actualizar_conIdInexistente_lanzaExcepcion() {
         when(resenaRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThrows(RuntimeException.class, () -> resenaService.actualizar(99L, resena));
+        assertThrows(RuntimeException.class,
+                () -> resenaService.actualizar(99L, resena, EMAIL, false));
+    }
+
+    // Verificación de propiedad: si otro intenta editar la reseña de maría, AccesoDenegada.
+    @Test
+    void actualizar_deOtroUsuario_lanzaAccesoDenegada() {
+        when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> resenaService.actualizar(1L, resena, OTRO_EMAIL, false));
+        assertEquals("Solo puedes editar tus propias reseñas", ex.getMessage());
+        verify(resenaRepository, never()).save(any());
+    }
+
+    // ADMIN puede editar reseñas ajenas.
+    @Test
+    void actualizar_comoAdmin_permitidoEnResenaDeOtro() {
+        Resena datosNuevos = new Resena();
+        datosNuevos.setPuntuacion(3.0);
+        datosNuevos.setComentario("Moderado");
+
+        when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
+        when(resenaRepository.save(resena)).thenReturn(resena);
+
+        assertDoesNotThrow(() -> resenaService.actualizar(1L, datosNuevos, OTRO_EMAIL, true));
     }
 
     // --- TESTS DE eliminar() ---
 
-    // Esto verifica que eliminar una reseña existente llama a deleteById.
     @Test
     void eliminar_conIdExistente_eliminaCorrectamente() {
-        when(resenaRepository.existsById(1L)).thenReturn(true);
+        when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
 
-        resenaService.eliminar(1L);
+        resenaService.eliminar(1L, EMAIL, false);
 
         verify(resenaRepository).deleteById(1L);
     }
 
-    // Esto verifica que eliminar una reseña inexistente lanza excepción.
     @Test
     void eliminar_conIdInexistente_lanzaExcepcion() {
-        when(resenaRepository.existsById(99L)).thenReturn(false);
+        when(resenaRepository.findById(99L)).thenReturn(Optional.empty());
 
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> resenaService.eliminar(99L));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> resenaService.eliminar(99L, EMAIL, false));
         assertEquals("Reseña no encontrada", ex.getMessage());
         verify(resenaRepository, never()).deleteById(any());
     }
 
+    @Test
+    void eliminar_deOtroUsuario_lanzaAccesoDenegada() {
+        when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
+
+        AccesoDenegadoException ex = assertThrows(AccesoDenegadoException.class,
+                () -> resenaService.eliminar(1L, OTRO_EMAIL, false));
+        assertEquals("Solo puedes borrar tus propias reseñas", ex.getMessage());
+        verify(resenaRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void eliminar_comoAdmin_permitidoEnResenaDeOtro() {
+        when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
+
+        assertDoesNotThrow(() -> resenaService.eliminar(1L, OTRO_EMAIL, true));
+        verify(resenaRepository).deleteById(1L);
+    }
+
     // --- TESTS DE consultas ---
 
-    // Esto verifica que obtenerPorAlbum delega correctamente en el repositorio.
     @Test
     void obtenerPorAlbum_devuelveLista() {
         when(resenaRepository.findByAlbumId(1L)).thenReturn(List.of(resena));
@@ -175,7 +250,6 @@ class ResenaServiceTest {
         verify(resenaRepository).findByAlbumId(1L);
     }
 
-    // Esto verifica que obtenerPorUsuario delega correctamente en el repositorio.
     @Test
     void obtenerPorUsuario_devuelveLista() {
         when(resenaRepository.findByUsuarioId(1L)).thenReturn(List.of(resena));

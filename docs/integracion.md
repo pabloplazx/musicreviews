@@ -2059,15 +2059,16 @@ Estas son las cosas que el frontend NO hace y por qué. Todas tienen su justific
 | Sin verificación de email al registrarse | Requiere SMTP + endpoint de verificación + columna `email_verificado` | Anexo |
 | Catálogo sin estrellas (rating no agregado en el listado) | El listado paginado del backend no devuelve `puntuacionMedia` | § 7 |
 | Sin orden "Mejor valorados" en catálogo | Requiere `@Formula` con subselect o `@Query` con LEFT JOIN sobre `resena` + GROUP BY | § 11 |
-| Búsqueda solo de álbumes (no busca artistas ni usuarios como entidades propias) | El endpoint `?q=` matchea álbumes por título o nombre del artista; no devuelve artistas como resultado independiente. Lista propia de artistas/usuarios requiere endpoints nuevos | § 11 |
+| Búsqueda solo de álbumes (no busca artistas ni usuarios como entidades propias) | El endpoint `?q=` matchea álbumes por título o nombre del artista; no devuelve artistas como resultado independiente | § 11 |
 | Sin reseñas recientes en DetalleArtista | No hay endpoint dedicado; haría falta N+1 | § 8 |
 | Sin "seguir artista" | No hay endpoint | § 8 |
 | Stats reducidas en DetalleArtista (solo álbumes) | No hay endpoint para media+total reseñas por artista | § 8 |
 | Sin subida de archivos (foto perfil, portadas) | Backend no tiene endpoint multipart; el panel admin no permite crear álbumes por la misma razón (subir portada) | § 9 |
 | Sin cambio de contraseña | Backend no expone endpoint | § 9 |
-| `DELETE /api/resenas/{id}` no verifica owner/admin | Cualquier autenticado puede borrar cualquier reseña por API directa. Protección solo a nivel de UI (botón solo en `/admin`) | § 11 |
 | Sin invalidación de JWT al hacer logout | JWT puro no permite invalidación; haría falta blacklist en servidor o tokens cortos + refresh | § 6 (paso 4) |
-| Sin borrado en cascada de artistas/álbumes desde el panel | Requiere cascadear a álbumes/reseñas hijas o validar antes; sale del alcance | § 11 |
+| Sin borrado en cascada de artistas/álbumes desde el panel | Requiere cascadear a álbumes/reseñas hijas o validar antes | § 11 |
+| Sin tests de controller con `MockMvc`+`@WithMockUser` | Las pruebas de seguridad están automatizadas a nivel de service (50 tests verdes) y manualmente con Postman; tests de controller serían redundancia | `auditoria_seguridad.md` |
+| Sin validaciones declarativas (`@NotBlank`, `@Email`, `@Size`) | Las restricciones están en `@Column(length=...)` y validaciones del service | `auditoria_seguridad.md` |
 
 **Limitaciones que SE RESOLVIERON durante la fase 4** (no estaban resueltas en versiones anteriores de este documento):
 
@@ -2078,6 +2079,7 @@ Estas son las cosas que el frontend NO hace y por qué. Todas tienen su justific
 | Panel admin con datos mock | Panel admin funcional con stats reales, gestión de usuarios, crear artista, moderar reseñas |
 | Sin desactivar cuentas | Endpoint `PATCH /api/usuarios/{id}/activo` (solo ADMIN) funcional |
 | `GET /api/usuarios` accesible a cualquier autenticado (filtraba emails) | Restringido a ADMIN |
+| **`POST/PUT/DELETE` de reseñas, usuarios y favoritos sin verificación de propiedad** | **Verificación implementada — solo el dueño del recurso o ADMIN pueden modificar. 12 tests automatizados nuevos. Detalle en [`auditoria_seguridad.md`](auditoria_seguridad.md).** |
 
 Cada una de las limitaciones que quedan se podría implementar con un cambio relativamente acotado en el backend y otro en el frontend. Son **ampliaciones futuras** que no afectan al núcleo de funcionalidad evaluable del TFG.
 
