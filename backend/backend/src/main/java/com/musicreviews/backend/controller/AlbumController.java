@@ -21,15 +21,18 @@ public class AlbumController {
     private final AlbumService albumService;
 
     // GET /api/albumes → devuelve álbumes paginados.
-    // Acepta ?titulo=, ?genero=, ?artistaId= para filtrar, y ?page=0&size=12 para paginar.
+    // Acepta ?q= (búsqueda unificada en título o artista), ?titulo= (solo título),
+    // ?genero=, ?artistaId= para filtrar, y ?page=0&size=12 para paginar.
     @GetMapping
     public Page<Album> obtenerTodos(
+            @RequestParam(required = false) String q,
             @RequestParam(required = false) String titulo,
             @RequestParam(required = false) String genero,
             @RequestParam(required = false) Long artistaId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("titulo").ascending());
+        if (q != null && !q.isBlank()) return albumService.buscar(q, pageable);
         if (titulo != null && !titulo.isBlank()) return albumService.buscarPorTitulo(titulo, pageable);
         if (genero != null && !genero.isBlank()) return albumService.obtenerPorGenero(genero, pageable);
         if (artistaId != null) return albumService.obtenerPorArtista(artistaId, pageable);

@@ -36,6 +36,14 @@ public class AlbumService {
         return albumRepository.findByTituloContainingIgnoreCase(titulo, pageable);
     }
 
+    // Búsqueda unificada: matchea álbumes cuyo título O nombre del artista contengan el texto.
+    // Se usa desde el frontend cuando el usuario escribe algo como "Rojuu" o "Radiohead".
+    @Transactional(readOnly = true)
+    public Page<Album> buscar(String texto, Pageable pageable) {
+        return albumRepository.findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase(
+                texto, texto, pageable);
+    }
+
     @Transactional(readOnly = true)
     public Page<Album> obtenerPorArtista(Long artistaId, Pageable pageable) {
         return albumRepository.findByArtistaId(artistaId, pageable);

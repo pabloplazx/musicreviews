@@ -18,6 +18,11 @@ public interface AlbumRepository extends JpaRepository<Album, Long> {
     // Se usa para el buscador de álbumes en la app.
     Page<Album> findByTituloContainingIgnoreCase(String titulo, Pageable pageable);
 
+    // Busca en título de álbum O nombre de artista. Usado por el buscador unificado del frontend
+    // para que escribir el nombre de un artista devuelva todos sus álbumes.
+    Page<Album> findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase(
+            String titulo, String nombreArtista, Pageable pageable);
+
     // Esto devuelve todos los álbumes de un artista concreto, identificado por su ID.
     Page<Album> findByArtistaId(Long artistaId, Pageable pageable);
 
