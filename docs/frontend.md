@@ -431,6 +431,32 @@ Hasta ahora el navbar oculta los enlaces a páginas privadas, pero las rutas sig
 
 Detalle completo, código y verificaciones: [`integracion.md` § 6](integracion.md).
 
+### Sesión 4 (28/04/2026) — paso 5: páginas públicas con datos reales
+
+Reemplazo de los datos mock de Inicio, Catálogo, Búsqueda y Rankings por datos reales del backend.
+
+**Servicios nuevos** (uno por dominio del backend, igual que `auth.js`):
+
+- `services/albumes.js` — listado paginado y detalle de álbumes
+- `services/artistas.js` — listado y detalle de artistas
+- `services/estadisticas.js` — resumen, rankings, géneros, actividad reciente
+
+**Páginas conectadas:**
+
+- `Inicio.jsx` — Reseñas recientes + Top Álbumes reales. Hero rediseñado: el mock estático "DAMN." sustituido por la mejor reseña reciente con su portada real, link al detalle.
+- `Catalogo.jsx` — paginación server-side, géneros dinámicos (top 8 de la BD), búsqueda con **debounce 300 ms**, solo orden A→Z (limitación del backend).
+- `Busqueda.jsx` — tendencias + recientes + búsqueda con debounce.
+- `Rankings.jsx` — 5 fetches en paralelo con `Promise.all`.
+
+**Componentes UI tocados:**
+
+- `CatalogoCard.jsx` — `rating` opcional (el listado paginado del backend no incluye puntuación).
+- `ResenaCard.jsx` — convertido a `<Link>` para que las reseñas sean clicables.
+
+**Limitaciones conocidas:** el catálogo no muestra estrellas (el backend no devuelve `puntuacionMedia` en el listado), solo orden A→Z (no acepta `sort`), búsqueda solo por título de álbum.
+
+Detalle, decisiones técnicas, código y 12 casos verificados: [`integracion.md` § 7](integracion.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |
