@@ -479,6 +479,24 @@ Páginas de detalle conectadas, incluyendo el toggle de favoritos funcional con 
 
 **10 casos verificados manualmente.** Detalle completo: [`integracion.md` § 8](integracion.md).
 
+### Sesión 6 (28/04/2026) — paso 7: páginas de usuario
+
+Las tres páginas relacionadas con el usuario conectadas con el backend.
+
+**Servicio nuevo:** `services/usuarios.js` con `getUsuarioPorUsername` (público) y `actualizarUsuario(id, datos, token)` (con auth).
+
+**`AuthContext.jsx`:** nuevo método `actualizarUsuarioLocal(datosUsuario)` para sincronizar el contexto + localStorage tras editar perfil sin tocar el token.
+
+**Páginas conectadas:**
+
+- `PerfilUsuario.jsx` — `useParams` para `:username`; cadena de 2-3 fetches (datos, reseñas, favoritos si hay sesión); tab Favoritos con tres estados según haya o no sesión; botón "Editar perfil" solo si `esMiPerfil`.
+- `EditarPerfil.jsx` — inicializado desde `useAuth`; PUT con auth y sincronización del contexto tras éxito; email read-only (el backend no lo permite cambiar); URL en lugar de upload (paso 9 simplificado). Botones de "Cambiar contraseña" y "Desactivar cuenta" eliminados (no hay endpoints).
+- `MisFavoritos.jsx` — ruta protegida; quitar inline con `e.preventDefault/stopPropagation` para no disparar el Link envolvente; optimistic update.
+
+**Limitaciones honestas:** subida de archivos no implementada (URL como workaround), cambio de contraseña no implementado, desactivar cuenta no implementado (DELETE borra de verdad).
+
+**9 casos verificados manualmente.** Detalle: [`integracion.md` § 9](integracion.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |

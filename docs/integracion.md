@@ -1450,7 +1450,154 @@ Estas decisiones son honestas con la estructura del backend. La página "se ve m
 
 ---
 
-## 9. Resumen de cambios durante esta sesión hasta paso 6
+## 9. Paso 7 — Páginas de usuario
+
+### El problema que resuelve
+
+Las tres páginas relacionadas con el usuario (`/perfil/:username`, `/editar-perfil`, `/favoritos`) seguían con datos mock. Tras este paso:
+
+- Ver el perfil **público** de cualquier usuario con sus reseñas reales.
+- **Editar el propio perfil** (username, bio, foto) y que el cambio se refleje en el navbar inmediatamente.
+- **Mis favoritos** lista los álbumes guardados del usuario logueado, con opción de quitar uno sin recargar la página.
+
+### `services/usuarios.js` — uno público + uno con auth
+
+```js
+export async function getUsuarioPorUsername(username) { ... }     // público
+export async function actualizarUsuario(id, datos, token) { ... } // requiere token
+```
+
+`encodeURIComponent(username)` en la URL para que usernames con caracteres especiales (raros pero posibles: `usuario.con.puntos`, espacios, etc.) no rompan la ruta.
+
+### Sincronización del contexto tras edición — `actualizarUsuarioLocal`
+
+Tras un PUT exitoso, el navbar tiene que mostrar el nuevo username/foto sin que el usuario tenga que cerrar sesión y volver a entrar. Para eso se añade un método al contexto:
+
+```jsx
+function actualizarUsuarioLocal(datosUsuario) {
+  setUsuario(datosUsuario);
+  localStorage.setItem("usuario", JSON.stringify(datosUsuario));
+}
+```
+
+Importante: **no toca el token**. La sesión sigue activa con el mismo JWT (que solo contiene `email` y `rol`, no username; por tanto sigue siendo válido aunque cambie el username).
+
+Se usa así desde `EditarPerfil.jsx` tras el PUT:
+
+```jsx
+const actualizado = await actualizarUsuario(usuario.id, datos, token);
+actualizarUsuarioLocal({ ...usuario, ...actualizado });
+```
+
+El spread `{...usuario, ...actualizado}` mantiene los campos que ya teníamos (rol, etc., que no vienen en la respuesta del PUT) y sobrescribe los que sí vienen (username, bio, fotoPerfil).
+
+### `PerfilUsuario.jsx` — público con favoritos condicional
+
+**`useParams` para `:username`:** la URL es `/perfil/maria_indie`, no `/perfil/5`, porque el username es más amigable y permanente que un id. El componente lo lee y hace la cadena:
+
+1. `getUsuarioPorUsername(username)` → datos del usuario.
+2. `getResenasPorUsuario(usuario.id)` → reseñas (público).
+3. Si hay sesión activa: `getFavoritosUsuario(usuario.id, token)` → favoritos (con auth).
+
+**`useEffect` separado para favoritos:** cuando cambia la sesión (el usuario inicia o cierra sesión sin recargar), se vuelve a evaluar si hay token y se cargan / borran los favoritos. El primer `useEffect` no se vuelve a ejecutar (depende de `username`, que no ha cambiado).
+
+**Reset de estado al cambiar `username`:**
+
+```jsx
+useEffect(() => {
+  setPerfil(null);
+  setResenas(null);
+  setFavoritos(null);
+  // ... carga
+}, [username]);
+```
+
+Sin este reset, al navegar de `/perfil/maria_indie` a `/perfil/admin` se vería momentáneamente el perfil de maría con las reseñas de admin. El reset deja la pantalla en "Cargando…" hasta que llega lo nuevo.
+
+**`esMiPerfil` para el botón "Editar":**
+
+```jsx
+const esMiPerfil = sesion?.id === perfil.id;
+```
+
+El botón "Editar perfil" solo aparece si la sesión actual es el dueño del perfil. Visitando el perfil de otro usuario, el botón no se muestra.
+
+**Tab "Favoritos" con tres estados:** sin sesión → "Inicia sesión para ver", con sesión cargando → "Cargando…", con sesión cargado vacío → "No tiene favoritos", con sesión cargado con datos → grid. La lógica está clara con returns condicionales secuenciales.
+
+### `EditarPerfil.jsx`
+
+**Inicializa el formulario con los datos del contexto:**
+
+```jsx
+const [username, setUsername] = useState(usuario?.username ?? "");
+const [bio, setBio] = useState(usuario?.bio ?? "");
+const [fotoPerfil, setFotoPerfil] = useState(usuario?.fotoPerfil ?? "");
+```
+
+No hace falta otra fetch — la información ya está en `useAuth()` desde el login. Si el usuario edita campos y refresca la página antes de guardar, los cambios se pierden (esperado).
+
+**Email de solo lectura:** el backend no permite cambiar el email (ver `UsuarioService.actualizar`). En lugar de mostrar un campo editable que va a fallar, se muestra `disabled` con un mensaje "El email no se puede modificar". Honesto.
+
+**URL de foto en lugar de upload:** el backend no tiene endpoint multipart para subir archivos. Para no dejar el feature roto, el campo es un input `type="url"` donde el usuario pega la URL de una imagen pública. Funciona, no engaña, y queda documentado como simplificación. La preview de la foto se muestra al lado del input.
+
+**Botones eliminados:**
+
+- "Cambiar contraseña": no hay endpoint en el backend.
+- "Desactivar cuenta": el `DELETE /api/usuarios/{id}` borra de verdad, no desactiva (el modelo Usuario tiene `activo: boolean` pero no hay endpoint para alternarlo). Mantener un botón que parecería desactivar pero que en realidad borra sería peligroso. Se elimina.
+
+**Mensaje de éxito tras guardar:** un banner verde con "Perfil actualizado correctamente" que aparece sobre el formulario. No se navega lejos de la página, así el usuario puede seguir editando si quiere.
+
+### `MisFavoritos.jsx` — protegida con `quitar` inline
+
+La ruta está envuelta en `<RutaProtegida>` (paso 4), así que aquí siempre hay sesión. No hace falta defensa adicional.
+
+**Botón de quitar inline en la card:** al pasar el ratón sobre el corazón, `hover:bg-error` cambia el color para indicar que se va a borrar. El click se intercepta:
+
+```jsx
+async function handleQuitar(albumId, e) {
+  e.preventDefault();   // evitar que el Link al detalle del álbum se dispare
+  e.stopPropagation();
+  // ...
+}
+```
+
+Sin `preventDefault` + `stopPropagation`, al hacer click en el botón se activaría también el `<Link>` que envuelve la card y se navegaría al detalle del álbum. Esos dos métodos cortan ese efecto y dejan que solo se ejecute la acción del botón.
+
+**Optimistic update del listado:** tras el DELETE en backend, se actualiza el estado local **filtrando el favorito borrado** sin volver a hacer GET:
+
+```jsx
+setFavoritos((prev) => prev.filter((f) => f.album.id !== albumId));
+```
+
+Más rápido que un round-trip extra al servidor y la UI se actualiza al instante.
+
+**`borrandoId` para indicador visual y guard:** mientras se está borrando un favorito concreto, su botón muestra "…" y queda `disabled`. Si el usuario hace click muchas veces seguidas, solo se ejecuta una.
+
+### Verificación — pruebas manuales
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| `/perfil/maria_indie` sin sesión | Datos de maría + reseñas + tab Favoritos con "Inicia sesión para ver" | ✅ |
+| `/perfil/maria_indie` con sesión de maría | Botón "Editar perfil" visible; tab Favoritos carga sus 6 favoritos | ✅ |
+| `/perfil/maria_indie` con sesión de admin | Sin botón "Editar perfil"; los favoritos de maría se ven (cualquier sesión basta para ese GET) | ✅ |
+| `/perfil/inexistente` | Pantalla de error con mensaje del backend ("Usuario no encontrado") | ✅ |
+| `/editar-perfil` sin sesión | Redirige a `/login` (RutaProtegida del paso 4) | ✅ |
+| Cambiar username y guardar | 200, banner verde, navbar muestra nueva inicial inmediatamente | ✅ |
+| Cambiar foto pegando URL de Spotify | Preview se actualiza al teclear; tras guardar, navbar muestra el nuevo avatar | ✅ |
+| `/favoritos` lista y permite quitar uno | El favorito desaparece sin recargar; persistido en backend al volver | ✅ |
+| Click rápido en quitar favorito | Botón muestra "…" durante el DELETE, no permite doble petición | ✅ |
+
+### Limitaciones conocidas
+
+- **Subida de archivos para foto de perfil**: no implementada. Solo URL pegada. Requiere endpoint multipart en backend + storage (S3, sistema de ficheros local, etc.).
+- **No hay cambio de contraseña**. El backend no expone endpoint. Mejora futura.
+- **No hay desactivar cuenta** (el `DELETE` borra). Para implementar "desactivar" hay que añadir endpoint que marque `activo = false`.
+
+---
+
+## 10. Resumen de cambios durante esta sesión hasta paso 7
+
+A continuación los nuevos del paso 7 (los anteriores ya están listados arriba):
 
 ### Backend
 
@@ -1492,21 +1639,30 @@ Estas decisiones son honestas con la estructura del backend. La página "se ve m
 | `services/favoritos.js` *(nuevo)* | `esFavorito`, `getFavoritosUsuario`, `agregarFavorito`, `quitarFavorito` (todas con token) | Paso 6 |
 | `pages/DetalleAlbum.jsx` | `useParams` + 3 fetches; toggle favorito funcional con auth; reseñas reales con username clicable; "Más del artista" filtrando el actual | Paso 6 |
 | `pages/DetalleArtista.jsx` | `useParams` + 2 fetches paralelos; discografía completa ordenada por fecha desc; stats reducidas a álbumes; botón "Seguir artista" eliminado (no hay endpoint) | Paso 6 |
+| `services/usuarios.js` *(nuevo)* | `getUsuarioPorUsername` (público), `actualizarUsuario(id, datos, token)` (con auth) | Paso 7 |
+| `context/AuthContext.jsx` | Nuevo método `actualizarUsuarioLocal` para sincronizar el contexto + localStorage tras editar perfil sin tocar el token | Paso 7 |
+| `pages/PerfilUsuario.jsx` | `useParams` para `:username`; cadena de 2-3 fetches; tabs Reseñas/Favoritos con estados condicionales según haya o no sesión; botón "Editar" solo si `esMiPerfil` | Paso 7 |
+| `pages/EditarPerfil.jsx` | Inicializado desde `useAuth`; PUT con auth; sincroniza contexto tras éxito; email read-only; URL en lugar de upload; botones de cambiar contraseña y desactivar cuenta eliminados | Paso 7 |
+| `pages/MisFavoritos.jsx` | `getFavoritosUsuario` con auth; quitar inline con `e.preventDefault/stopPropagation` para no disparar el Link; optimistic update (filter del array sin recargar) | Paso 7 |
 | **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
 
-**18 ficheros tocados + 7 nuevos + 10 borrados de basura/docs antiguos.**
+**23 ficheros tocados + 8 nuevos + 10 borrados de basura/docs antiguos.**
 
 ---
 
-## 10. Estado al cerrar esta entrega
+## 11. Estado al cerrar esta entrega
 
-✅ **Pasos 1-5 completos** (AuthContext, Login+Registro, Navbar dinámico, Rutas protegidas, Páginas públicas con datos reales).
-✅ **Paso 6 (Detalle de álbum y de artista) completo** — `/album/:id` y `/artista/:id` consumen datos reales. Tres fetches encadenados/paralelos en DetalleAlbum (álbum + reseñas → más del artista). Toggle de favoritos funcional con auth. Reseñas con username clicable. DetalleArtista con discografía ordenada por fecha. Servicios `resenas.js` y `favoritos.js` añadidos.
-✅ **Backend con 5 bugs arreglados y todas las relaciones LAZY serializando correctamente.**
-✅ **38/38 tests unitarios verdes.**
-✅ **Postman documentado con flujo end-to-end del login + CRUD de reseñas y favoritos.**
+✅ **Pasos 1-7 completos.**
+   - 1: AuthContext
+   - 2: Login + Registro funcionales
+   - 3: Navbar dinámico
+   - 4: Rutas protegidas
+   - 5: Páginas públicas con datos reales
+   - 6: Detalle de álbum y artista (con favoritos funcional)
+   - 7: Páginas de usuario (perfil, editar perfil, mis favoritos)
+✅ **Backend con 5 bugs arreglados, 38/38 tests verdes.**
 
-🔜 **Siguiente: paso 7 (Páginas de usuario).** `/perfil/:username`, `/editar-perfil`, `/favoritos` siguen mock. Hay que conectarlas con `GET /api/usuarios/username/{username}`, `GET /api/resenas?usuarioId=`, `GET /api/favoritos?usuarioId=` y `PUT /api/usuarios/{id}` para la edición de perfil.
+🔜 **Siguiente: paso 8 (Reseñas: crear, editar, borrar).** `/crear-resena` y `/editar-resena` siguen mock. Hay que conectarlas con `POST /api/resenas` y `PUT /api/resenas/{id}` (con auth) y permitir borrar la propia reseña desde la pantalla de edición. Es el último paso de funcionalidad — el paso 9 (subida de archivos) se ha simplificado a "URL como input" en el paso 7.
 
 ---
 
