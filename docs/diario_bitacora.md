@@ -932,3 +932,72 @@ Construyen query strings con `URLSearchParams` (codificación correcta de tildes
 
 ✅ Pasos 1-5 completos. Las 4 páginas públicas con datos reales del backend.
 🔜 Paso 6: Detalle de álbum y artista. `/album/:id` y `/artista/:id` siguen mock; conectar con `getAlbum(id)`, listar reseñas reales del álbum, mostrar discografía del artista.
+
+---
+
+## Semana 10 — Fase 4, sesión 5: detalle de álbum y de artista (28/04/2026)
+
+**Fase:** FASE 4 — paso 6 del plan.
+
+### Objetivo
+
+Conectar las páginas de detalle (álbum y artista) con datos reales del backend, incluyendo el toggle funcional de favoritos.
+
+### Servicios nuevos
+
+| Fichero | Funciones | Auth |
+|---|---|---|
+| `services/resenas.js` | `getResenasPorAlbum`, `getResenasPorUsuario`, `getResenaUsuarioAlbum` | Pública |
+| `services/favoritos.js` | `esFavorito`, `getFavoritosUsuario`, `agregarFavorito`, `quitarFavorito` | Requiere token |
+
+**Patrón de auth:** las funciones reciben el `token` como parámetro y lo ponen en el header `Authorization`. El componente lo lee de `useAuth()`. Servicios siguen siendo funciones puras, sin acoplarse a React ni a localStorage.
+
+### `DetalleAlbum.jsx`
+
+- `useParams` lee `:id` de la URL.
+- `Promise.all([getAlbum, getResenasPorAlbum])` paralelo, después `getAlbumes({artistaId, size: 5})` encadenado para "Más del artista" (filtrando el álbum actual).
+- `useEffect` separado para comprobar el estado de favorito (depende de `usuario` y `token`, que pueden cambiar tras login/logout).
+- Toggle favorito con guard `favoritoOcupado` para evitar doble click → 400 "ya está en favoritos".
+- Sin sesión, el botón se convierte en `<Link to="/login">` con texto distinto. Honesto.
+- Reseñas con username clicable a `/perfil/:username` y fecha formateada con `toLocaleDateString("es-ES")`. Indicador "editada" si `fechaEdicion != null`.
+- Puntuación media calculada en cliente sobre las reseñas reales (el backend no devuelve `puntuacionMedia` en el detalle del álbum).
+- "Escribir reseña" pasa el `albumId` por `state` para que `CrearResena` (paso 8) sepa qué álbum.
+
+### `DetalleArtista.jsx`
+
+- `useParams` + `Promise.all([getArtista, getAlbumes({artistaId, size: 100})])`.
+- Discografía ordenada por `fechaLanzamiento` descendente (más recientes primero).
+- **Sin sección "Reseñas recientes"** — el backend no expone "todas las reseñas de un artista". Implementarlo con N+1 fetches no escala. Se documenta como mejora futura.
+- **Stats reducidas a "Álbumes"** — la media y el total de reseñas por artista requieren agregado del backend.
+- **Botón "Seguir artista" eliminado** — no hay endpoint en el backend; mantener el toggle local sería engañoso.
+
+### Verificación — 10 casos manuales
+
+Probado con maría logueada y sin sesión:
+
+| Caso | Resultado |
+|---|---|
+| Click en card del catálogo / Top Álbumes → /album/:id | ✅ Carga datos reales |
+| Detalle de álbum sin reseñas | ✅ Estado vacío con CTA |
+| Reseñas con username clicable + fecha + "editada" | ✅ |
+| "Más del artista" excluye el álbum actual | ✅ |
+| Click en nombre del artista → /artista/:id | ✅ |
+| Sin sesión, botón "Inicia sesión para guardar" en lugar de favoritos | ✅ |
+| Con sesión, click en "♡" → POST favorito y cambia a "♥" sin recargar | ✅ |
+| Click rápido doble | ✅ Segundo click ignorado por `disabled` |
+| Refrescar con favorito guardado | ✅ Aparece "♥ En favoritos" en la carga |
+| Quitar de favoritos | ✅ DELETE y vuelve a "♡" |
+
+### Limitaciones conocidas
+
+- No hay endpoint para "todas las reseñas de un artista" — sin sección de reseñas recientes en DetalleArtista.
+- No hay endpoint de "seguir artista" — botón eliminado.
+- No hay endpoint para "media + total reseñas por artista" — stats reducidas.
+- Muchos álbumes no tienen `descripcion` en BD (Spotify no la importa) — bloque condicional.
+
+### Estado al cerrar la sesión
+
+✅ Pasos 1-6 completos. Las 6 páginas públicas/de detalle con datos reales y el toggle de favoritos funcional.
+🔜 Paso 7: Páginas de usuario. `/perfil/:username` (perfil público con reseñas y favoritos del usuario), `/editar-perfil` (PUT con auth), `/favoritos` (lista del usuario logueado).
+
+Detalle completo en [`integracion.md` § 8](integracion.md).

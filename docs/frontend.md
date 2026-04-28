@@ -457,6 +457,28 @@ Reemplazo de los datos mock de Inicio, Catálogo, Búsqueda y Rankings por datos
 
 Detalle, decisiones técnicas, código y 12 casos verificados: [`integracion.md` § 7](integracion.md).
 
+### Sesión 5 (28/04/2026) — paso 6: detalle de álbum y de artista
+
+Páginas de detalle conectadas, incluyendo el toggle de favoritos funcional con auth.
+
+**Servicios nuevos:**
+
+- `services/resenas.js` — funciones públicas: `getResenasPorAlbum`, `getResenasPorUsuario`, `getResenaUsuarioAlbum`.
+- `services/favoritos.js` — todas con token: `esFavorito`, `getFavoritosUsuario`, `agregarFavorito`, `quitarFavorito`.
+
+**Páginas conectadas:**
+
+- `DetalleAlbum.jsx` — `useParams` + `Promise.all([getAlbum, getResenasPorAlbum])` + segunda fetch encadenada para "Más del artista". Toggle favorito real con auth (POST/DELETE), guard contra doble click. Sin sesión, el botón se convierte en `<Link>` a login. Reseñas con username clicable y fecha en español. Puntuación media calculada en cliente.
+- `DetalleArtista.jsx` — `Promise.all([getArtista, getAlbumes({artistaId})])`. Discografía ordenada por fecha desc. Stats reducidas a "Álbumes" porque el backend no expone media/total de reseñas por artista. Botón "Seguir artista" eliminado (no hay endpoint).
+
+**Limitaciones conocidas que se documentan:**
+
+- No hay endpoint para todas las reseñas de un artista → sin sección reseñas recientes en DetalleArtista.
+- No hay endpoint de "seguir artista" → botón quitado.
+- No hay endpoint para stats agregadas por artista (media, total reseñas).
+
+**10 casos verificados manualmente.** Detalle completo: [`integracion.md` § 8](integracion.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |
