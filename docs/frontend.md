@@ -368,3 +368,49 @@ La siguiente fase es la integración con el backend:
 | Mis Favoritos | `/favoritos` | Estado vacío con ♡ |
 | Panel Admin | `/admin` | Stats + gestión de contenido y usuarios |
 | 404 Not Found | `*` | — |
+
+---
+
+## Fase 4 — Integración con el backend (28/04/2026 →)
+
+> Documentación completa y autocontenida de esta fase: [`integracion.md`](integracion.md). Aquí solo el resumen para mantener `frontend.md` como índice general.
+
+### Plan (9 pasos)
+
+1. **AuthContext** — estado React compartido del usuario y token, persistido en localStorage.
+2. **Login + Registro** — formularios reales contra `POST /api/auth/login` y `/register`.
+3. **Navbar dinámico** — botones según haya o no sesión; opción de logout.
+4. **Rutas protegidas** — redirección a `/login` si se entra sin sesión a páginas que la requieren.
+5. **Páginas públicas** — Catálogo, Búsqueda, Rankings con datos reales del backend.
+6. **Páginas de álbum** — Detalle de álbum y artista con datos y reseñas reales.
+7. **Páginas de usuario** — Perfil, editar perfil, favoritos.
+8. **Reseñas** — crear, editar, borrar desde la UI.
+9. **Portadas** — gestión de imágenes de álbum y artista.
+
+### Sesión 1 (28/04/2026) — pasos 1 y 2 + arreglo del backend
+
+Lo abordado:
+
+- `AuthContext.jsx`, `services/auth.js`, `Login.jsx`, `Registro.jsx` validados contra el backend real. Login con maría funcional end-to-end.
+- **5 bugs del backend** detectados al integrar y arreglados (ver [`integracion.md` § 2](integracion.md) y [`pruebas_postman.md`](pruebas_postman.md) sección "Bugs encontrados durante la integración"):
+  - B1: `LazyInitializationException` con `open-in-view=false`
+  - B2: `@JsonAutoDetect` rompía proxies de Hibernate
+  - B3: `refresh()` antes del flush en `ResenaService.actualizar`
+  - B4: Login/registro devolvían texto plano en errores
+  - B5: Test unitario sin mock de `EntityManager`
+- **38 tests unitarios** verdes tras los arreglos.
+- **6 lotes de pruebas Postman** cubriendo login + CRUD reseñas + CRUD favoritos + casos de error.
+
+### Decisiones técnicas
+
+| Decisión | Razón |
+|---|---|
+| Context API en vez de Redux/Zustand | El estado compartido se reduce a `usuario` y `token`. Context resuelve eso en 50 líneas. Redux sería over-engineering para un TFG. |
+| `localStorage` en vez de cookies HttpOnly | El backend devuelve el JWT en el body. Para el header `Authorization: Bearer ...` lo más simple es localStorage. Cookies HttpOnly serían más seguras contra XSS pero requieren cambiar el backend. |
+| `fetch` nativo en vez de Axios | App con pocos endpoints. No se justifica una dependencia de 30 KB extra solo por azúcar sintáctico. Si en el futuro hace falta interceptores se reevalúa. |
+| Capa `services/` separada del contexto | El contexto solo gestiona estado React. La red está en `services/auth.js`. Si mañana se cambia a Axios o se añade renovación automática de token, solo se toca un fichero. |
+| Errores como `throw new Error(mensaje)` | Idiomático en JS async — quien llama hace `try/catch`. El `mensaje` viene del campo `mensaje` del JSON del backend (`GlobalExceptionHandler`). |
+
+### Pendiente al cerrar la sesión 1
+
+Pasos 3 al 9 del plan. El paso 3 (Navbar dinámico) es el siguiente: primera vez que el contexto se usa fuera de los formularios de auth.

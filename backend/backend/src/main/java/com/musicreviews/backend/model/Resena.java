@@ -1,5 +1,6 @@
 package com.musicreviews.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -7,6 +8,7 @@ import java.time.LocalDateTime;
 
 // Esta clase representa la tabla "resena" en la base de datos.
 // Un usuario solo puede tener una reseña por álbum, controlado con la restricción UNIQUE.
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "resena", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"usuario_id", "album_id"})

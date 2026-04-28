@@ -1,5 +1,6 @@
 package com.musicreviews.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -7,6 +8,7 @@ import java.time.LocalDate;
 
 // Esta clase representa la tabla "album" en la base de datos.
 // Solo el administrador puede añadir álbumes. Las portadas son URLs de la API de Spotify.
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "album")
 @Data

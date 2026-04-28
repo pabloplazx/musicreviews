@@ -3,6 +3,7 @@ package com.musicreviews.backend.controller;
 import com.musicreviews.backend.dto.AuthResponse;
 import com.musicreviews.backend.dto.LoginRequest;
 import com.musicreviews.backend.dto.RegisterRequest;
+import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.security.JwtUtil;
 import com.musicreviews.backend.service.UsuarioService;
@@ -42,16 +43,18 @@ public class AuthController {
 
     // POST /api/auth/login → autentica al usuario y devuelve un token JWT.
     // Actualiza fechaUltimoLogin en cada inicio de sesión.
+    // Los errores se lanzan como ReglaNegocioException (400 + JSON uniforme) en lugar de devolver
+    // texto plano, para que el frontend pueda parsear siempre la respuesta como JSON.
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
         Usuario usuario = usuarioService.obtenerPorEmail(request.getEmail()).orElse(null);
 
         if (usuario == null || !passwordEncoder.matches(request.getPassword(), usuario.getPassword())) {
-            return ResponseEntity.status(401).body("Email o contraseña incorrectos");
+            throw new ReglaNegocioException("Email o contraseña incorrectos");
         }
 
         if (!usuario.isActivo()) {
-            return ResponseEntity.status(403).body("Cuenta desactivada");
+            throw new ReglaNegocioException("Cuenta desactivada");
         }
 
         usuarioService.actualizarUltimoLogin(usuario.getId());

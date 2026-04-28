@@ -4,6 +4,7 @@ import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.ResenaRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,7 +27,12 @@ class ResenaServiceTest {
     @Mock
     private ResenaRepository resenaRepository;
 
-    // Servicio real con el mock inyectado en lugar del repositorio real.
+    // Mock del EntityManager — el servicio llama a refresh() tras save() en crear() para poblar
+    // las relaciones LAZY desde la BD. En el test el mock simplemente ignora la llamada.
+    @Mock
+    private EntityManager entityManager;
+
+    // Servicio real con los mocks inyectados en lugar de las dependencias reales.
     @InjectMocks
     private ResenaService resenaService;
 
