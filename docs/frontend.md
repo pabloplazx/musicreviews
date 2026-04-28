@@ -413,6 +413,24 @@ Solo se tocó `src/components/layout/Navbar.jsx`. Es el primer sitio fuera de lo
 
 Detalle completo y motivación de cada decisión: [`integracion.md` § 4](integracion.md).
 
+### Sesión 3 (28/04/2026) — paso 4: Rutas protegidas
+
+Hasta ahora el navbar oculta los enlaces a páginas privadas, pero las rutas siguen siendo accesibles escribiendo la URL a mano. El paso 4 añade protección **a nivel de ruta**.
+
+**Ficheros nuevos** (en `src/components/routing/`):
+
+- `RutaProtegida.jsx`: comprueba `usuario` del contexto. Sin sesión → redirige a `/login` guardando la URL actual en `location.state.from`. Con sesión → renderiza `<Outlet />`.
+- `RutaAdmin.jsx`: igual + comprobación de `rol === "ADMIN"`. Sin rol → redirige a `/` (NO a `/login` para evitar bucle).
+
+**Ficheros modificados:**
+
+- `App.jsx`: rutas reagrupadas en 3 bloques (públicas / protegidas envueltas en `<RutaProtegida>` / admin envueltas en `<RutaAdmin>`).
+- `Login.jsx`: tras autenticar, navega a `location.state.from?.pathname` (con `replace: true`) en lugar de siempre a `/`. Así el usuario que fue rebotado desde `/favoritos` vuelve allí tras login.
+
+**Pruebas realizadas:** 5 casos manuales cubriendo redirección sin sesión, vuelta a la URL original tras login, USER no entra a `/admin`, ADMIN entra y rutas públicas siguen funcionando con/sin sesión. Para probar el rol ADMIN se creó un usuario `admin@musicreviews.com / admin123` (registro via API + UPDATE rol vía MySQL Shell en Aiven, ya que `POST /register` siempre crea con rol USER).
+
+Detalle completo, código y verificaciones: [`integracion.md` § 6](integracion.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |
