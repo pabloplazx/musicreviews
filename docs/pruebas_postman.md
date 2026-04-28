@@ -294,8 +294,216 @@ Script Python ejecutado el 20/04/2026 que puebla la BD usando la API REST.
 | ArtistaController | 7 | 0 | ✅ |
 | AlbumController | 10 | 0 | ✅ |
 | UsuarioController | 7 | 0 | ✅ |
-| ResenaController | 8 | 2 | ✅ (corregidos) |
+| ResenaController | 8 | 2 + B3 | ✅ (corregidos) |
 | FavoritoController | 6 | 3 | ✅ (corregidos) |
 | SpotifyController | 4 | 3 | ✅ (corregidos) |
 | EstadisticasController | 8 | 0 | ✅ |
 | GlobalExceptionHandler | 4 | 0 | ✅ |
+| AuthController | 3 | 1 (B4) | ✅ (corregido) |
+| **Transversal (configuración + entidades)** | — | 2 (B1, B2) + 1 test (B5) | ✅ (corregidos) |
+
+---
+
+## Bugs encontrados durante la integración con el frontend (28/04/2026)
+
+Durante el inicio de la fase 4 (integración del frontend con el backend) afloraron 5 bugs que no se habían detectado en las pruebas iniciales de cada controlador. La causa común es que las pruebas iniciales solo verificaban códigos HTTP (200/400/404) y no inspeccionaban el cuerpo JSON completo, ni replicaban el flujo "login → captura de token → uso del token en peticiones siguientes" como lo hace un cliente real.
+
+### Bug B1 — `LazyInitializationException` por `open-in-view=false`
+
+**Síntoma:** desde Postman, `POST /api/resenas` con un token válido devolvía **401 Unauthorized**, no 200. Lo mismo con `GET /api/resenas/usuario/5/album/373`. Endpoints muy parecidos como `GET /api/albumes/3` sí funcionaban.
+
+**Diagnóstico:** redirigir los logs del backend a fichero (`./mvnw spring-boot:run > backend.log`) y reproducir el fallo. El log mostraba:
+
+```
+HttpMessageNotWritableException: Could not write JSON:
+Could not initialize proxy [com.musicreviews.backend.model.Album#373] - no session
+```
+
+Es un `LazyInitializationException` clásico: Jackson intenta serializar la respuesta, accede a `resena.album` que es un `@ManyToOne(fetch = FetchType.LAZY)` (un proxy de Hibernate), pero la sesión de Hibernate ya está cerrada → fallo.
+
+**Causa raíz:** en `application.properties` había:
+
+```
+spring.jpa.open-in-view=false
+```
+
+Se había puesto a `false` en una sesión anterior "para mejorar el rendimiento". Lo que hace ese parámetro es cerrar la sesión Hibernate al salir del `@Transactional`, antes de que Jackson serialice. Para entidades sin relaciones LAZY (como `Album`) no afecta. Para `Resena` y `Favorito`, que tienen `@ManyToOne(fetch = LAZY)` a `usuario` y `album`, rompe la serialización.
+
+El **misterio del 401 (en lugar del 500 esperado)** es que Spring Security 7 (Spring Boot 4.0.5) traduce los fallos durante la escritura del response como `Authentication` errors y dispara el `authenticationEntryPoint` configurado, que devuelve 401. Por eso el síntoma despistaba: parecía un problema de auth cuando en realidad era de serialización.
+
+**Solución:** revertir a `open-in-view=true` (el default de Spring Boot por algo). El supuesto coste de rendimiento es despreciable en este TFG y permite que Jackson cargue las relaciones LAZY al serializar:
+
+```
+spring.jpa.open-in-view=true
+```
+
+**Verificación:** los mismos endpoints volvieron a 200 inmediatamente.
+
+### Bug B2 — `@JsonAutoDetect` rompía los proxies de Hibernate
+
+**Síntoma:** después de arreglar el B1, la respuesta del POST llegaba con código 200 pero el campo `usuario` aparecía con todos los valores a `null`:
+
+```json
+"usuario": {
+  "$$_hibernate_interceptor": {},
+  "activo": true,
+  "bio": null,
+  "email": null,
+  "id": null,
+  "username": null,
+  ...
+}
+```
+
+A la vez, aparecía basura interna de Hibernate (`$$_hibernate_interceptor`, `hibernateLazyInitializer`).
+
+**Causa raíz:** en `Usuario.java` se había añadido en una sesión anterior:
+
+```java
+@JsonAutoDetect(
+  fieldVisibility = JsonAutoDetect.Visibility.ANY,
+  getterVisibility = JsonAutoDetect.Visibility.NONE,
+  ...
+)
+```
+
+Esta anotación fuerza a Jackson a leer **los campos directamente** en lugar de llamar a los getters. El problema es que los proxies de Hibernate **no inicializan los campos** — solo se inicializan al llamar al getter. Resultado: Jackson lee los campos antes de que el proxy los rellene → todo `null`.
+
+La anotación se había añadido para que `@JsonProperty(WRITE_ONLY)` sobre `password` ocultara la contraseña en las respuestas. Pero esa anotación funciona perfectamente sin `@JsonAutoDetect` porque Jackson, por defecto, mezcla las anotaciones de campo con el getter al introspeccionar la propiedad.
+
+**Solución:**
+
+1. Quitar `@JsonAutoDetect` de `Usuario.java`. La ocultación de `password` sigue funcionando con la `@JsonProperty(access = WRITE_ONLY)` que ya estaba en el campo.
+2. Añadir `@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})` en todas las entidades que se serialicen (`Usuario`, `Album`, `Artista`, `Resena`, `Favorito`) para evitar que esos campos internos del proxy se cuelen en el JSON.
+
+**Verificación:** la siguiente respuesta del POST tenía `usuario.username: "maria_indie"`, `usuario.email`, etc., todos rellenos, y sin basura de Hibernate.
+
+### Bug B3 — `refresh()` antes del flush descartaba los cambios en `actualizar()`
+
+**Síntoma:** `PUT /api/resenas/{id}` devolvía siempre los valores **antiguos** de la reseña, no los nuevos. Si la reseña tenía `puntuacion=4.0` y se hacía PUT con `puntuacion=5.0`, la respuesta seguía mostrando 4.0 (aunque la BD luego acababa con 5.0 al final del request).
+
+**Causa raíz:** el método `ResenaService.actualizar` tenía:
+
+```java
+resena.setPuntuacion(datosActualizados.getPuntuacion());
+resena.setComentario(datosActualizados.getComentario());
+
+resenaRepository.save(resena);
+entityManager.refresh(resena);   // ← problema aquí
+return resena;
+```
+
+`refresh()` recarga la entidad desde la BD descartando los cambios en memoria. Pero `save()` **no fuerza el flush** — los cambios solo se persisten al hacer commit de la transacción, al final del método. Así que el orden temporal real es:
+
+1. `setPuntuacion(5.0)` — en memoria, no en BD.
+2. `save()` — Hibernate lo agenda pero no lo persiste todavía.
+3. `refresh()` — lee la BD (que sigue con 4.0) y **sobrescribe** los cambios en memoria.
+4. `return resena` — con 4.0.
+5. Commit — el dirty checking ve que `resena` tiene 4.0 (igual que en BD) y no genera UPDATE.
+
+El refresh tenía sentido en `crear()` porque ahí la entidad se persiste con `INSERT` inmediato (por la estrategia `IDENTITY` que necesita el id auto-generado para devolverlo) y `refresh` convierte los stubs `{id:5}` del request body en proxies gestionados. En `actualizar()` la entidad ya viene gestionada de `findById()` y `refresh` solo estorba.
+
+**Solución:** quitar el `refresh()` en `actualizar()`. El dirty checking de Hibernate al commit ya genera el UPDATE; el objeto en memoria se devuelve con los valores nuevos:
+
+```java
+return resenaRepository.save(resena);
+```
+
+**Verificación:** `PUT` ahora devuelve los valores nuevos y `fechaEdicion` se rellena correctamente (la lleva el `@PreUpdate`).
+
+### Bug B4 — Login/register devolvían `text/plain` en errores → frontend no podía parsear
+
+**Síntoma:** al probar el `Login.jsx` con un password incorrecto, en lugar de mostrar "Email o contraseña incorrectos" salía un error técnico de JSON parsing.
+
+**Diagnóstico:** `curl -i -X POST /api/auth/login` con credenciales malas devolvía:
+
+```
+HTTP/1.1 401
+Content-Type: text/plain;charset=UTF-8
+
+Email o contraseña incorrectos
+```
+
+Pero el frontend hace:
+
+```js
+const data = await res.json();   // ← falla porque el body no es JSON
+```
+
+El `res.json()` peta con `SyntaxError: Unexpected token E in JSON at position 0`, el `catch` lo atrapa y muestra ese mensaje técnico al usuario.
+
+**Causa raíz:** `AuthController.java` devolvía manualmente texto plano:
+
+```java
+return ResponseEntity.status(401).body("Email o contraseña incorrectos");
+```
+
+mientras que el resto de la API usa el `GlobalExceptionHandler` para devolver siempre JSON uniforme con `{status, mensaje, timestamp}`.
+
+**Solución:** que `AuthController` lance excepciones (`ReglaNegocioException`) en vez de devolver bodies manuales. El `GlobalExceptionHandler` las convierte a JSON automáticamente:
+
+```java
+if (usuario == null || !passwordEncoder.matches(...)) {
+    throw new ReglaNegocioException("Email o contraseña incorrectos");
+}
+```
+
+Cambia el código HTTP de 401 a 400 (porque `ReglaNegocioException` se mapea a 400), pero eso no es un problema funcional: el frontend no diferenciaba entre 400 y 401 para errores de login, solo lee el campo `mensaje`. Y semánticamente "credenciales mal" está más cerca de "petición incorrecta" que de "no autenticado".
+
+**Verificación:**
+
+```
+$ curl -i -X POST /api/auth/login -d '{"email":"x@x.com","password":"WRONG"}'
+HTTP/1.1 400
+Content-Type: application/json
+
+{"mensaje":"Email o contraseña incorrectos","status":400,"timestamp":"..."}
+```
+
+### Bug B5 — Test unitario `ResenaServiceTest.crear_*` roto desde la sesión anterior
+
+**Síntoma:** al ejecutar `./mvnw test` después de los arreglos anteriores, fallaba un único test:
+
+```
+ResenaServiceTest.crear_conDatosValidos_guardaYDevuelveResena
+NullPointerException: Cannot invoke "EntityManager.refresh(Object)"
+because "this.entityManager" is null
+```
+
+**Causa raíz:** en una sesión anterior se había añadido el campo `private final EntityManager entityManager` a `ResenaService` (para el `refresh()` documentado como Bug 2/3 en este mismo documento), pero **no se actualizó el test** que usa `@InjectMocks`. Mockito necesita un `@Mock EntityManager` para inyectar; sin él, el campo queda a `null`.
+
+Este bug **ya estaba ahí** antes de empezar la fase 4, simplemente nadie había vuelto a correr los tests.
+
+**Solución:** añadir el mock al test:
+
+```java
+@Mock
+private EntityManager entityManager;
+```
+
+Mockito lo inyecta automáticamente en `ResenaService` por tipo. El test no necesita stubbear `entityManager.refresh(...)` porque es un método `void` y Mockito hace nothing por defecto.
+
+**Verificación:** `./mvnw test` pasa los 38 tests sin errores.
+
+### Tabla resumen de los bugs B1–B5
+
+| Bug | Recurso afectado | Síntoma | Causa raíz | Fix |
+|---|---|---|---|---|
+| **B1** | `Resena`, `Favorito` | `POST /api/resenas` con token válido devolvía 401 | `spring.jpa.open-in-view=false` cerraba la sesión Hibernate antes de que Jackson serializara los proxies LAZY. Spring Security 7 traduce el fallo de escritura como 401. | `application.properties`: `open-in-view=true` |
+| **B2** | `Usuario` (y por arrastre, todas las relaciones) | Respuestas con `usuario.id: null`, `usuario.username: null` y campos `$$_hibernate_interceptor` en el JSON | `@JsonAutoDetect(fieldVisibility=ANY)` en `Usuario` forzaba a Jackson a leer campos en lugar de getters; los proxies de Hibernate solo se inicializan al llamar al getter. | Quitar `@JsonAutoDetect` y añadir `@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})` en `Usuario`, `Album`, `Artista`, `Resena`, `Favorito`. |
+| **B3** | `ResenaService.actualizar` | `PUT /api/resenas/{id}` devolvía siempre los valores **antiguos** | `entityManager.refresh()` antes del flush sobrescribía los cambios en memoria con los datos antiguos de BD. | Quitar `refresh()` en `actualizar`. El dirty checking ya genera el UPDATE al commit. |
+| **B4** | `AuthController` | Login con password mal devolvía 401 + `text/plain`. El frontend petaba al hacer `res.json()`. | `AuthController` devolvía `ResponseEntity.status(401).body("...")` con texto plano en vez de delegar en el `GlobalExceptionHandler`. | Lanzar `ReglaNegocioException` desde `AuthController.login`. Cambia el código a 400 pero ahora devuelve JSON uniforme. |
+| **B5** | `ResenaServiceTest` | El test `crear_conDatosValidos_guardaYDevuelveResena` reventaba con `NullPointerException: this.entityManager is null` | Se había inyectado `EntityManager` en `ResenaService` pero el test no se actualizó con un `@Mock`. | Añadir `@Mock private EntityManager entityManager;` en el test. |
+
+### Lo que se aprendió
+
+- **Las pruebas Postman iniciales eran insuficientes** porque solo miraban status codes. Faltaba inspeccionar `Content-Type` y el contenido del body JSON.
+- **El símbolo del 401 puede engañar.** En Spring Security 7 cualquier excepción durante la escritura de la respuesta acaba en el `authenticationEntryPoint` y devuelve 401 al cliente. Si parece un problema de autenticación, hay que mirar los logs del backend antes de asumirlo.
+- **La regla de oro para entidades JPA serializables**: `@JsonIgnoreProperties({"hibernateLazyInitializer","handler"})` siempre, y NO usar `@JsonAutoDetect(fieldVisibility=ANY)` con relaciones LAZY.
+- **`refresh()` después de `save()`** solo es válido en métodos `crear` (donde IDENTITY ya forzó INSERT). En `actualizar` es perjudicial.
+- **Cualquier cambio en la firma de un service obliga a revisar sus tests** — añadir un campo inyectado y olvidar el `@Mock` en el test es un error silencioso.
+
+### Verificación tras los arreglos
+
+- `./mvnw test` → 38/38 verdes.
+- 6 lotes de pruebas Postman (login + CRUD reseñas + CRUD favoritos + casos de error) → todos OK con `usuario` y `album` poblados, sin basura de Hibernate, sin password filtrado.

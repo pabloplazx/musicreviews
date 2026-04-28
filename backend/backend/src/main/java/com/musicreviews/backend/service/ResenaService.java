@@ -4,6 +4,7 @@ import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.repository.ResenaRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ public class ResenaService {
 
     // final + @RequiredArgsConstructor reemplaza @Autowired. Los campos inmutables son más seguros y fáciles de testear.
     private final ResenaRepository resenaRepository;
+    private final EntityManager entityManager;
 
     // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
     @Transactional(readOnly = true)
@@ -45,8 +47,9 @@ public class ResenaService {
             throw new ReglaNegocioException("El usuario ya ha reseñado este álbum");
         }
 
-        // save() devuelve la entidad guardada con el id asignado — el findById posterior era redundante.
-        return resenaRepository.save(resena);
+        Resena guardada = resenaRepository.save(resena);
+        entityManager.refresh(guardada);
+        return guardada;
     }
 
     @Transactional
@@ -59,7 +62,9 @@ public class ResenaService {
         resena.setPuntuacion(datosActualizados.getPuntuacion());
         resena.setComentario(datosActualizados.getComentario());
 
-        // save() devuelve la entidad actualizada — el findById posterior era redundante.
+        // findById ya devuelve la entidad gestionada con sus relaciones como proxies. La modificación
+        // en memoria es lo que se devuelve; @Transactional + dirty checking persisten los cambios al commit.
+        // No se llama a refresh() porque recargaría desde la BD antes del flush, descartando los cambios.
         return resenaRepository.save(resena);
     }
 

@@ -1,5 +1,6 @@
 package com.musicreviews.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -8,6 +9,7 @@ import java.time.LocalDateTime;
 // Esta clase representa la tabla "favorito" en la base de datos.
 // Guarda la relación entre un usuario y un álbum que ha marcado como favorito.
 // Un usuario no puede añadir el mismo álbum dos veces, controlado con la restricción UNIQUE.
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "favorito", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"usuario_id", "album_id"})

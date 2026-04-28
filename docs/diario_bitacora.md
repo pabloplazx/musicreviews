@@ -243,3 +243,437 @@ src/
 - `backend/backend/src/main/java/com/musicreviews/backend/README.md` — nuevos endpoints y métodos del `SpotifyService`.
 - `docs/pruebas_postman.md` — Bugs 4, 5, 6 y nuevas filas de pruebas.
 - `docs/importacion/proceso_importacion.md` — tabla de problemas ampliada y nuevos endpoints.
+
+---
+
+## Semana 8 — Frontend: páginas principales y componentes UI (26/04/2026)
+
+**Fase:** FASE 3 — Frontend React + Vite (continuación)
+
+### Finalización de la página Inicio
+
+- Completada la sección CTA "¿Listo para compartir tu opinión musical?" con fondo `surface` (`#16261E`), título, botón "Crear cuenta gratis" enlazado a `/registro` y link secundario "¿Ya tienes cuenta?" enlazado a `/login`.
+- Creado `Footer.jsx` (`src/components/layout/`) con copyright a la izquierda y links de navegación a la derecha. Integrado en `App.jsx` para que aparezca en todas las páginas.
+
+### Repositorio frontend independiente
+
+- Creado repositorio privado `pabloplazx/musicreviews-frontend` en GitHub mediante `gh repo create`.
+- Primer commit con los 35 archivos del proyecto (código, design system, componentes).
+- Segundo commit con `README.md` profesional: descripción del proyecto, stack, estructura de carpetas, design system (colores y tipografía), tabla de rutas e instrucciones de instalación.
+
+### Página Login
+
+- Creado `FormInput.jsx` (`src/components/ui/`) — componente reutilizable de campo de formulario con label, input y soporte de estado de error (prop `error={true}` activa borde rojo). Reutilizado en Login y Registro.
+- Implementado `Login.jsx` con card centrada verticalmente, cabecera con logo y subtítulo, campos de correo y contraseña, link "¿Olvidaste tu contraseña?", botón "Iniciar sesión" y link a registro. Banner de error preparado para conectar al backend (controlado por variable `error`).
+
+### Página Registro
+
+- Implementado `Registro.jsx` reutilizando `FormInput`. Cuatro campos: nombre de usuario, correo electrónico, contraseña y confirmar contraseña. Estructura idéntica al Login, sin link de contraseña olvidada.
+
+### Componentes UI reutilizables (Catálogo y Búsqueda)
+
+Antes de montar las páginas se extrajeron todos los elementos reutilizables:
+
+| Componente | Ruta | Descripción |
+|---|---|---|
+| `GenreChip` | `src/components/ui/` | Chip de género/filtro con estado activo (verde) e inactivo. Props: `label`, `active`, `onClick` |
+| `CatalogoCard` | `src/components/ui/` | Tarjeta de álbum con portada, badge de género opcional (top-right), nombre, artista y rating numérico |
+| `SearchBar` | `src/components/ui/` | Barra de búsqueda con icono SVG de lupa, borde verde al focus. Props: `placeholder`, `value`, `onChange` |
+| `SelectOrden` | `src/components/ui/` | Selector `<select>` estilizado con el design system. Props: `opciones` (array `{value, label}`), `value`, `onChange` |
+| `Paginacion` | `src/components/ui/` | Paginación con flechas anterior/siguiente, páginas cercanas y `...` para saltos. Props: `paginaActual`, `totalPaginas`, `onPageChange` |
+| `AlbumRow` | `src/components/ui/` | Fila compacta horizontal con portada pequeña y "Álbum — Artista". Usada en sección "Añadidos recientemente" de Búsqueda |
+
+### Página Catálogo
+
+- Implementado `Catalogo.jsx` con datos hardcodeados (10 álbumes). Funcionalidades operativas:
+  - **Filtrado por género** mediante `GenreChip` — resetea la página al cambiar.
+  - **Búsqueda** por nombre de álbum o artista mediante `SearchBar` — resetea la página al escribir.
+  - **Ordenación** funcional: "Mejor valorados" (por rating descendente) y "A → Z" (alfabético). "Más recientes" reservado para cuando el backend devuelva fechas.
+  - **Paginación** con `Paginacion` — 10 álbumes por página.
+  - **Estado vacío** cuando ningún álbum coincide con el filtro o la búsqueda.
+
+### Página Búsqueda
+
+- Creado `Busqueda.jsx` con ruta `/busqueda` registrada en `App.jsx`.
+- Comportamiento por estados:
+  - **Filtro "Todo" + sin texto** → muestra secciones "Tendencias" (4 tarjetas `CatalogoCard` sin badge de género) y "Añadidos recientemente" (3 filas `AlbumRow`).
+  - **Filtro distinto de "Todo" + sin texto** → pantalla vacía (el usuario debe escribir algo).
+  - **Cualquier texto escrito** → muestra estado "Sin resultados" con el término buscado. Cuando el backend esté listo, este bloque se condicionará a que la API devuelva array vacío.
+
+### Navbar: acceso a Búsqueda
+
+- Añadido icono SVG de lupa en el Navbar entre los links de navegación y los botones de acción, enlazado a `/busqueda`. Color `text-muted` en reposo, `text-primary` en hover.
+
+### Decisiones técnicas destacadas
+
+- El badge de género en `CatalogoCard` es opcional (`{genero && ...}`) — permite reutilizar la misma card en Búsqueda (Tendencias) sin badge.
+- La ordenación en Catálogo usa `[...albumsFiltrados].sort()` — copia del array para no mutar el estado.
+- `focus-within:border-primary` en `SearchBar` — el borde se pone verde al hacer click en cualquier parte del contenedor, no solo en el input.
+
+### Estado al finalizar la sesión
+
+- Páginas completadas: Inicio ✅, Login ✅, Registro ✅, Catálogo ✅, Búsqueda ✅
+- Páginas pendientes: Rankings, Detalle de álbum, Perfil de usuario, Detalle de artista, Estadísticas, Crear/Editar reseña, Mis favoritos, Panel Admin, 404
+- Componentes UI creados en total: 11 (`SectionTitle`, `PortadaPlaceholder`, `Estrellas`, `ResenaCard`, `AlbumCard`, `FormInput`, `GenreChip`, `CatalogoCard`, `SearchBar`, `SelectOrden`, `Paginacion`, `AlbumRow`)
+
+---
+
+## Semana 9 — Frontend: Rankings, Detalles y Crear Reseña (27/04/2026)
+
+**Fase:** FASE 3 — Frontend React + Vite (continuación)
+
+### Metodología de trabajo adoptada
+
+A partir de esta sesión se trabaja conectando directamente con **Figma Desktop Bridge MCP** para consultar el diseño real antes de implementar cada pantalla. Esto garantiza fidelidad pixel a pixel con el prototipo.
+
+### Página Rankings — `/rankings`
+
+- Implementado `Rankings.jsx` fiel al diseño Figma (node `32:332`, página "Estadisticas").
+- Estructura:
+  - **4 stat cards** en fila: Álbumes (1.2k), Artistas (340), Reseñas (8.4k), Usuarios (521).
+  - **2 columnas**: Top Álbumes (lista de filas con posición, portada, artista, rating) + Por género (barras de progreso proporcionales calculadas sobre el máximo).
+  - **2 columnas**: Top Artistas (filas con `Link` a `/artista/:id`) + Actividad reciente.
+- Todos los datos son mock (arrays hardcodeados). Se reemplazarán con `fetch` al backend cuando esté conectado.
+
+### Página Detalle de Álbum — `/album/:id`
+
+- Creado `DetalleAlbum.jsx`. Estructura:
+  - **Header** (`bg-card`): portada `aspect-square` con `PortadaPlaceholder`, chip de género, título, artista enlazado a `/artista/1` (hover `text-primary`), año, rating con estrellas + conteo, dos botones de acción.
+  - **Botón "Añadir a favoritos"** con toggle local: alterna entre `♡ Añadir a favoritos` (outline) y `♥ En favoritos` (fondo `primary/10`). Listo para conectar a `POST /api/favoritos`.
+  - **Reseñas**: lista con avatar circular (inicial del usuario, `bg-primary`), nombre, fecha, estrellas y texto.
+  - **Estado vacío** preparado: condicionado a `RESENAS.length > 0`. Al conectar backend se condicionará a que la API devuelva array vacío.
+  - **"Más de [Artista]"**: grid 4 columnas, cada álbum es un `Link` a `/album/:id` con efecto hover.
+- Ruta: `/album/:id` registrada en `App.jsx`. El `id` se leerá con `useParams()` al conectar el backend.
+
+### Página Detalle de Artista — `/artista/:id`
+
+- Creado `DetalleArtista.jsx`. Estructura:
+  - **Header**: avatar circular con borde `border-primary`, nombre, **botón "Seguir artista"** con toggle local (outline → relleno verde + "✓ Siguiendo").
+  - **Stats** en una card horizontal con divisores: Media★, Álbumes, Reseñas.
+  - **Biografía**: párrafo de texto con `leading-relaxed`.
+  - **Discografía**: grid 5 columnas con portada `aspect-square`, título, año y rating. Cada ítem es `Link` a `/album/:id`.
+  - **Reseñas recientes**: grid 2 columnas con avatar, usuario, estrellas, título en negrita, texto y fecha. Enlace "Ver todas →" en la cabecera de sección.
+- Ruta: `/artista/:id` registrada en `App.jsx`.
+
+### Página Crear Reseña — `/crear-resena`
+
+- Creado `CrearResena.jsx`. Pantalla de formulario completo sin Navbar/Footer.
+- **`App.jsx` refactorizado**: extraído componente `Layout` interno que usa `useLocation` para ocultar Navbar y Footer en las rutas `/crear-resena` y `/editar-resena`.
+- Estructura:
+  - **Header propio**: logo a la izquierda, "Nueva reseña" centrado con `absolute + -translate-x-1/2`, botón "Cancelar" (`navigate(-1)`) a la derecha.
+  - **Card del álbum** (izquierda): portada `aspect-square` (`PortadaPlaceholder` con `iconSize="text-6xl"`), título, artista·año, chip de género.
+  - **Formulario** (derecha):
+    - **Estrellas interactivas**: componente `EstrellasInteractivas` local. Detecta si el cursor está en la mitad izquierda o derecha de cada estrella (`getBoundingClientRect`) para asignar media o estrella entera. Muestra "X / 5" o "— / 5" si no hay puntuación.
+    - **Textarea** con contador `{texto.length} / 2000` en esquina inferior derecha. Truncado con `.slice(0, MAX_CHARS)`.
+  - **Botón "Publicar reseña"** deshabilitado (`opacity-40`) si `puntuacion === 0`.
+
+### Mejoras transversales de navegación
+
+- `AlbumCard` y `CatalogoCard` convertidas en `Link` a `/album/:id` (prop `id` con default `1`). Efecto `hover:border-primary`.
+- Nombre del artista en `DetalleAlbum` enlazado a `/artista/1`.
+- Filas de Top Artistas en `Rankings` envueltas en `Link` a `/artista/:posicion`.
+- `PortadaPlaceholder` acepta prop `iconSize` (default `text-4xl`) para escalar el ♪ según el tamaño del contenedor.
+
+### Estado al finalizar la sesión
+
+- Páginas completadas: Inicio ✅, Login ✅, Registro ✅, Catálogo ✅, Búsqueda ✅, Rankings ✅, Detalle Álbum ✅, Detalle Artista ✅, Crear Reseña ✅
+- Páginas pendientes: Editar Reseña, Perfil de Usuario, Editar Perfil, Mis Favoritos, Panel Admin, 404
+
+---
+
+## Semana 9 — Frontend: páginas restantes y cierre visual (27/04/2026, sesión 2)
+
+**Fase:** FASE 3 — Frontend React + Vite (finalización)
+
+### Páginas implementadas
+
+#### Editar Reseña — `/editar-resena`
+
+- Creado `EditarResena.jsx`. Pantalla sin Navbar/Footer (añadida a `SIN_NAVBAR` en `App.jsx`).
+- Reutiliza el componente `EstrellasInteractivas` (extraído como componente compartido en esta sesión).
+- **Izquierda**: card del álbum con badge "Editando" (`bg-primary/20`) en lugar del chip de género, y card "Detalles de tu reseña" con divisor `h-px bg-border` y dos filas: `Publicada` + `Última edición`.
+- **Derecha**: puntuación interactiva pre-rellenada con la puntuación existente, textarea pre-rellenado con el texto existente y contador de caracteres.
+- **Tres botones**: "Guardar cambios" (`bg-primary`, `navigate(-1)`), "Eliminar reseña" (`border-error`, `hover:bg-error/10`), "Cancelar" (texto muted, `navigate(-1)`).
+
+#### Perfil de Usuario — `/perfil/:username`
+
+- Creado `PerfilUsuario.jsx`. Ruta dinámica `/perfil/:username`.
+- **Header**: avatar circular `w-24 h-24` con inicial del username, nombre, "Miembro desde", stats de Reseñas y Favoritos en `text-primary font-bold text-2xl`, botón "Editar perfil" posicionado con `absolute top-0 right-0`.
+- **Tabs** con indicador animado: línea `h-0.5 bg-primary` en `absolute bottom-0` debajo del tab activo.
+- **Tab Reseñas**: lista vertical de cards con portada `w-24 h-24`, nombre álbum, artista, estrellas, texto en italic y fecha alineada a la derecha. Cada card es `Link` a `/album/:id`.
+- **Tab Favoritos**: grid 6 columnas con badge de corazón `bg-primary text-white` en esquina superior derecha. Cada item es `Link` a `/album/:id`.
+
+#### Editar Perfil — `/editar-perfil`
+
+- Creado `EditarPerfil.jsx`. Pantalla sin Navbar/Footer.
+- **Header propio**: logo, "Editar perfil" centrado, botón "Guardar" (`bg-primary`).
+- **Avatar**: círculo `w-24 h-24 border-2 border-primary` con ♪ + botón de texto "Cambiar foto de perfil".
+- **Campos**: Username, Email (inputs `h-12`), Biografía (textarea 4 filas).
+- **Seguridad**: botón "Cambiar contraseña" con flecha `›` en `justify-between`.
+- **Zona de peligro**: heading `text-error`, botón "Desactivar cuenta" con `border-error hover:bg-error/10`.
+
+#### Mis Favoritos — `/favoritos`
+
+- Creado `MisFavoritos.jsx`. Ruta `/favoritos`.
+- **Estado con datos**: grid 4 columnas, badge ♥ `bg-primary text-white` en esquina de cada portada.
+- **Estado vacío**: icono ♡ `text-border`, título, subtítulo y `Link` a `/catalogo`.
+- Accesible desde el icono ♥ añadido al Navbar.
+
+#### Panel de Administración — `/admin`
+
+- Creado `PanelAdmin.jsx`. Ruta `/admin`.
+- **4 stat cards**: Álbumes, Artistas, Usuarios, Inactivos (este último en `text-error`).
+- **Gestión de contenido** (columna izquierda): 4 botones-fila con icono circular `bg-primary/20`, título, subtítulo y flecha `›`.
+- **Gestión de usuarios** (columna derecha): 3 usuarios con avatar circular, username, email y badge Activo (`bg-primary/20 text-primary`) / Inactivo (`bg-error/20 text-error`).
+- **Moderación**: botón-fila "Revisar reseñas reportadas" con flecha `›`.
+
+#### 404 Not Found — `*`
+
+- Creado `NotFound.jsx`. Captura cualquier ruta desconocida (`<Route path="*">`).
+- Número "404" en `text-primary font-heading` a `font-size: 10rem`.
+- Subtítulo, descripción y `Link` "Ir al inicio" (`bg-primary`).
+
+### Refactorización: extracción de `EstrellasInteractivas`
+
+- `EstrellasInteractivas` estaba duplicado en `CrearResena.jsx` y `EditarResena.jsx`.
+- Extraído a `src/components/ui/EstrellasInteractivas.jsx` y ambas páginas actualizadas para importarlo.
+- Comportamiento: detecta mitad izquierda/derecha de cada estrella con `getBoundingClientRect` para media estrella. Muestra "X / 5" o "— / 5".
+
+### Mejoras de navegación
+
+- Icono ♥ añadido al Navbar (antes del icono de búsqueda) con `Link` a `/favoritos`.
+- Badge corazón de `MisFavoritos.jsx` corregido de `bg-white text-primary` a `bg-primary text-white`.
+- Botón "Guardar cambios" de `EditarResena` corregido: ahora ejecuta `navigate(-1)`.
+
+### Estado al finalizar la sesión
+
+**Frontend 100% completado.** ✅
+
+| Pantalla | Ruta | Estado |
+|---|---|---|
+| Inicio | `/` | ✅ |
+| Login | `/login` | ✅ |
+| Registro | `/registro` | ✅ |
+| Catálogo | `/catalogo` | ✅ |
+| Búsqueda | `/busqueda` | ✅ |
+| Rankings | `/rankings` | ✅ |
+| Detalle de Álbum | `/album/:id` | ✅ |
+| Detalle de Artista | `/artista/:id` | ✅ |
+| Crear Reseña | `/crear-resena` | ✅ |
+| Editar Reseña | `/editar-resena` | ✅ |
+| Perfil de Usuario | `/perfil/:username` | ✅ |
+| Editar Perfil | `/editar-perfil` | ✅ |
+| Mis Favoritos | `/favoritos` | ✅ |
+| Panel Admin | `/admin` | ✅ |
+| 404 Not Found | `*` | ✅ |
+
+**Componentes UI creados en total: 12**
+`SectionTitle`, `PortadaPlaceholder`, `Estrellas`, `EstrellasInteractivas`, `ResenaCard`, `AlbumCard`, `CatalogoCard`, `FormInput`, `GenreChip`, `SearchBar`, `SelectOrden`, `Paginacion`, `AlbumRow`
+
+---
+
+## Semana 10 — Fase 4, sesión 1: integración frontend ↔ backend (28/04/2026)
+
+**Fase:** FASE 4 — Conectar frontend React con backend Spring Boot.
+
+Plan de la fase (9 pasos): AuthContext → Login + Registro → Navbar dinámico → Rutas protegidas → Páginas públicas → Páginas de álbum → Páginas de usuario → Reseñas → Portadas.
+
+### Lo que se cubre en esta sesión
+
+1. **Paso 1 (AuthContext)** y **paso 2 (Login + Registro funcionales)** completos.
+2. **5 bugs del backend** detectados al hacer las primeras pruebas reales con Postman desde la perspectiva del frontend, y arreglados.
+3. **38 tests unitarios** verdes tras los arreglos.
+
+### Estado de partida del paso 1
+
+`AuthContext.jsx` y `services/auth.js` ya existían de una sesión anterior pero no se habían validado contra el backend. Login y Registro estaban maquetados pero sin lógica.
+
+Tras esta sesión:
+- `services/auth.js` — capa pura de red. `fetch` a `/api/auth/login` y `/api/auth/register`. Devuelve `{token, id, username, email, rol}` o lanza `Error` con `mensaje` del backend.
+- `AuthContext.jsx` — estado React de `usuario` y `token`, persistido en localStorage. Expone `login()`, `register()`, `logout()`, `useAuth()`.
+- `main.jsx` — envuelve `<App />` con `<AuthProvider>`.
+- `Login.jsx` y `Registro.jsx` — formularios conectados al contexto, con manejo de errores y estado de carga.
+
+### Bugs detectados en el backend al integrar
+
+#### Bug B1 — `LazyInitializationException` por `open-in-view=false`
+
+**Síntoma:** desde Postman, `POST /api/resenas` con un token válido devolvía **401 Unauthorized**, no 200. Lo mismo con `GET /api/resenas/usuario/5/album/373`. Endpoints muy parecidos como `GET /api/albumes/3` sí funcionaban.
+
+**Diagnóstico:** redirigir los logs del backend a fichero (`./mvnw spring-boot:run > backend.log`) y reproducir el fallo. El log mostraba:
+
+```
+HttpMessageNotWritableException: Could not write JSON:
+Could not initialize proxy [com.musicreviews.backend.model.Album#373] - no session
+```
+
+Es un `LazyInitializationException` clásico: Jackson intenta serializar la respuesta, accede a `resena.album` que es un `@ManyToOne(fetch = FetchType.LAZY)` (un proxy de Hibernate), pero la sesión de Hibernate ya está cerrada → fallo.
+
+**Causa raíz:** en `application.properties` había `spring.jpa.open-in-view=false`, puesto a `false` en una sesión anterior "para mejorar el rendimiento". Este parámetro cierra la sesión Hibernate al salir del `@Transactional`, antes de que Jackson serialice. Para entidades sin relaciones LAZY (como `Album`) no afecta. Para `Resena` y `Favorito`, que tienen `@ManyToOne(fetch = LAZY)` a `usuario` y `album`, rompe la serialización.
+
+El **misterio del 401 (en lugar del 500 esperado)** es que Spring Security 7 (Spring Boot 4.0.5) traduce los fallos durante la escritura del response como `Authentication` errors y dispara el `authenticationEntryPoint` configurado, que devuelve 401. Por eso el síntoma despistaba: parecía un problema de auth cuando en realidad era de serialización.
+
+**Solución:** revertir a `open-in-view=true` (el default de Spring Boot por algo). El supuesto coste de rendimiento es despreciable en este TFG y permite que Jackson cargue las relaciones LAZY al serializar.
+
+**Verificación:** los mismos endpoints volvieron a 200 inmediatamente.
+
+#### Bug B2 — `@JsonAutoDetect` rompía los proxies de Hibernate
+
+**Síntoma:** después de arreglar el B1, la respuesta del POST llegaba con código 200 pero el campo `usuario` aparecía con todos los valores a `null`:
+
+```json
+"usuario": {
+  "$$_hibernate_interceptor": {},
+  "activo": true,
+  "id": null,
+  "username": null,
+  "email": null,
+  ...
+}
+```
+
+A la vez, aparecía basura interna de Hibernate (`$$_hibernate_interceptor`, `hibernateLazyInitializer`).
+
+**Causa raíz:** en `Usuario.java` se había añadido en una sesión anterior `@JsonAutoDetect(fieldVisibility = ANY, getterVisibility = NONE, ...)`. Esta anotación fuerza a Jackson a leer los **campos directamente** en lugar de llamar a los getters. El problema es que los proxies de Hibernate **no inicializan los campos** — solo se inicializan al llamar al getter. Resultado: Jackson lee los campos antes de que el proxy los rellene → todo `null`.
+
+La anotación se había añadido para que `@JsonProperty(WRITE_ONLY)` sobre `password` ocultara la contraseña en las respuestas. Pero esa anotación funciona perfectamente sin `@JsonAutoDetect` porque Jackson, por defecto, mezcla las anotaciones de campo con el getter al introspeccionar la propiedad.
+
+**Solución:**
+
+1. Quitar `@JsonAutoDetect` de `Usuario.java`. La ocultación de `password` sigue funcionando con la `@JsonProperty(access = WRITE_ONLY)` que ya estaba en el campo.
+2. Añadir `@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})` en todas las entidades que se serialicen (`Usuario`, `Album`, `Artista`, `Resena`, `Favorito`) para evitar que esos campos internos del proxy se cuelen en el JSON.
+
+**Verificación:** la siguiente respuesta del POST tenía `usuario.username: "maria_indie"`, `usuario.email`, etc., todos rellenos, y sin basura de Hibernate.
+
+#### Bug B3 — `refresh()` antes del flush descartaba los cambios en `actualizar()`
+
+**Síntoma:** `PUT /api/resenas/{id}` devolvía siempre los valores **antiguos** de la reseña, no los nuevos. Si la reseña tenía `puntuacion=4.0` y se hacía PUT con `puntuacion=5.0`, la respuesta seguía mostrando 4.0 (aunque la BD luego acababa con 5.0 al final del request).
+
+**Causa raíz:** el método `ResenaService.actualizar` tenía:
+
+```java
+resena.setPuntuacion(datosActualizados.getPuntuacion());
+resenaRepository.save(resena);
+entityManager.refresh(resena);   // ← problema aquí
+return resena;
+```
+
+`refresh()` recarga la entidad desde la BD descartando los cambios en memoria. Pero `save()` **no fuerza el flush** — los cambios solo se persisten al hacer commit de la transacción. Orden temporal real:
+
+1. `setPuntuacion(5.0)` — en memoria, no en BD.
+2. `save()` — Hibernate lo agenda pero no lo persiste todavía.
+3. `refresh()` — lee la BD (que sigue con 4.0) y **sobrescribe** los cambios en memoria.
+4. `return resena` — con 4.0.
+5. Commit — el dirty checking ve que `resena` tiene 4.0 (igual que en BD) y no genera UPDATE.
+
+El refresh tenía sentido en `crear()` porque ahí la entidad se persiste con `INSERT` inmediato (por la estrategia `IDENTITY`) y `refresh` convierte los stubs `{id:5}` del request body en proxies gestionados. En `actualizar()` la entidad ya viene gestionada de `findById()` y `refresh` solo estorba.
+
+**Solución:** quitar el `refresh()` en `actualizar()`. El dirty checking de Hibernate al commit ya genera el UPDATE; el objeto en memoria se devuelve con los valores nuevos:
+
+```java
+return resenaRepository.save(resena);
+```
+
+**Verificación:** `PUT` ahora devuelve los valores nuevos y `fechaEdicion` se rellena correctamente.
+
+#### Bug B4 — Login/register devolvían `text/plain` en errores
+
+**Síntoma:** al probar el `Login.jsx` con un password incorrecto, en lugar de mostrar "Email o contraseña incorrectos" salía un error técnico de JSON parsing.
+
+**Diagnóstico:** `curl -i -X POST /api/auth/login` con credenciales malas devolvía:
+
+```
+HTTP/1.1 401
+Content-Type: text/plain;charset=UTF-8
+
+Email o contraseña incorrectos
+```
+
+Pero el frontend hace `const data = await res.json();` que falla porque el body no es JSON. El `catch` lo atrapa y muestra ese mensaje técnico al usuario.
+
+**Causa raíz:** `AuthController.java` devolvía manualmente texto plano:
+
+```java
+return ResponseEntity.status(401).body("Email o contraseña incorrectos");
+```
+
+mientras que el resto de la API usa el `GlobalExceptionHandler` para devolver siempre JSON uniforme con `{status, mensaje, timestamp}`.
+
+**Solución:** que `AuthController` lance excepciones (`ReglaNegocioException`) en vez de devolver bodies manuales:
+
+```java
+if (usuario == null || !passwordEncoder.matches(...)) {
+    throw new ReglaNegocioException("Email o contraseña incorrectos");
+}
+```
+
+Cambia el código HTTP de 401 a 400, pero eso no es un problema funcional: el frontend solo lee el campo `mensaje`. Y semánticamente "credenciales mal" está más cerca de "petición incorrecta" que de "no autenticado".
+
+**Verificación:**
+
+```
+$ curl -i -X POST /api/auth/login -d '{"email":"x@x.com","password":"WRONG"}'
+HTTP/1.1 400
+Content-Type: application/json
+
+{"mensaje":"Email o contraseña incorrectos","status":400,"timestamp":"..."}
+```
+
+#### Bug B5 — Test unitario roto desde la sesión anterior
+
+**Síntoma:** al ejecutar `./mvnw test` después de los arreglos anteriores, fallaba un único test:
+
+```
+ResenaServiceTest.crear_conDatosValidos_guardaYDevuelveResena
+NullPointerException: Cannot invoke "EntityManager.refresh(Object)"
+because "this.entityManager" is null
+```
+
+**Causa raíz:** en una sesión anterior se había añadido el campo `private final EntityManager entityManager` a `ResenaService` (para el `refresh()` documentado), pero **no se actualizó el test** que usa `@InjectMocks`. Mockito necesita un `@Mock EntityManager` para inyectar; sin él, el campo queda a `null`.
+
+Este bug **ya estaba ahí** antes de empezar la fase 4, simplemente nadie había vuelto a correr los tests.
+
+**Solución:** añadir el mock al test:
+
+```java
+@Mock
+private EntityManager entityManager;
+```
+
+Mockito lo inyecta automáticamente en `ResenaService` por tipo. El test no necesita stubbear `entityManager.refresh(...)` porque es un método `void` y Mockito hace nothing por defecto.
+
+**Verificación:** `./mvnw test` pasa los 38 tests sin errores.
+
+### Pruebas hechas
+
+Tres planos de verificación:
+
+1. **`curl` en consola** para diagnóstico del bug B1 — redirección de logs a fichero, captura del `HttpMessageNotWritableException` que reveló la causa raíz.
+2. **6 lotes Postman** cubriendo el flujo end-to-end del frontend: login → captura de token → POST/PUT/DELETE reseñas → POST/DELETE favoritos → casos de error (sin token, duplicado, validación, token corrupto).
+3. **Tests unitarios JUnit + Mockito**: 38/38 pasando tras los arreglos.
+
+### Bugs en pruebas a destacar
+
+- En el primer intento, el script `pm.environment.set("token", ...)` estaba en la petición de **reseñas** en vez de en la de **login**. Resultado: la variable `{{token}}` quedaba a `null` y el header `Authorization: Bearer null` provocaba 401. Este 401 inicial fue el que destapó toda la cadena de investigación.
+- El encoding de la consola Bash en Windows mandaba `Gran álbum` en Windows-1252 en vez de UTF-8, provocando `HttpMessageNotReadableException: Invalid UTF-8 middle byte`. No era bug del backend, era de la consola; en Postman no pasa porque manda UTF-8 nativo.
+
+### Cambios en el código
+
+**Backend** (`MusicReviews_TFG/backend/backend/`):
+- `src/main/resources/application.properties` (B1)
+- `src/main/java/.../model/Usuario.java`, `Album.java`, `Artista.java`, `Resena.java`, `Favorito.java` (B2)
+- `src/main/java/.../service/ResenaService.java` (B3)
+- `src/main/java/.../controller/AuthController.java` (B4)
+- `src/test/java/.../service/ResenaServiceTest.java` (B5)
+
+**Frontend** (`musicreviews-frontend/`): nada tocado en esta sesión (los ficheros ya existían).
+
+**Documentación**:
+- `docs/integracion.md` — **nuevo fichero** con el plan de la fase 4, AuthContext explicado, los 5 bugs con causa/solución/verificación, los 6 lotes Postman con respuestas reales, tests unitarios y anexo de decisiones técnicas.
+- `docs/pruebas_postman.md` — sección añadida con resumen de los bugs B1–B5 y aprendizajes.
+- `docs/frontend.md` — nueva sección "Fase 4" con resumen y enlace a `integracion.md`.
+
+### Estado al cerrar la sesión
+
+✅ Paso 1 (AuthContext) y paso 2 (Login + Registro) cerrados. Login con maría desde Postman funciona, devuelve token y datos del usuario, error de credenciales devuelve JSON parseable.
+🔜 Paso 3: Navbar dinámico — primera vez que el contexto se va a usar fuera de los formularios de auth, mostrando avatar/logout cuando hay sesión y los botones Entrar/Registrarse cuando no.

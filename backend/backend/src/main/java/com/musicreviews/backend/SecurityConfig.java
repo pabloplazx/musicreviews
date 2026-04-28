@@ -51,6 +51,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/albumes/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/resenas/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/estadisticas/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/usuarios/username/**").permitAll()
                 // Solo ADMIN: gestión del catálogo e importación desde Spotify
                 .requestMatchers(HttpMethod.POST, "/api/artistas/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/artistas/**").hasRole("ADMIN")

@@ -1,10 +1,12 @@
 package com.musicreviews.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.Data;
 
 // Esta clase representa la tabla "artista" en la base de datos.
 // Cada instancia es un artista musical cuyos álbumes pueden aparecer en la app.
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "artista")
 @Data

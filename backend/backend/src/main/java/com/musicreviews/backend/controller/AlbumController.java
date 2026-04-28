@@ -29,7 +29,6 @@ public class AlbumController {
             @RequestParam(required = false) Long artistaId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size) {
-
         Pageable pageable = PageRequest.of(page, size, Sort.by("titulo").ascending());
         if (titulo != null && !titulo.isBlank()) return albumService.buscarPorTitulo(titulo, pageable);
         if (genero != null && !genero.isBlank()) return albumService.obtenerPorGenero(genero, pageable);
