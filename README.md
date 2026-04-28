@@ -169,5 +169,7 @@ Todos los endpoints devuelven errores en formato JSON uniforme gracias al `Globa
 
 ## Estado del proyecto
 
-- **Backend:** completado y desplegable. 38/38 tests verdes. API REST funcional con JWT, integración Spotify y Last.fm. Ver `docs/diario_bitacora.md` para el historial.
-- **Frontend:** 15 pantallas implementadas (repo `musicreviews-frontend`). Fase 4 (integración con backend) en curso — pasos 1 y 2 completos (AuthContext + Login/Registro funcionales). Ver `docs/integracion.md`.
+- **Backend:** completado y desplegable. **38/38 tests verdes.** API REST funcional con JWT, integración Spotify y Last.fm, panel admin con endpoints específicos (PATCH `/usuarios/{id}/activo`), búsqueda unificada (`?q=`), orden parametrizable (`?sort=`). Ver `docs/diario_bitacora.md` para el historial.
+- **Frontend:** 15 pantallas implementadas + integración 100% terminada con el backend (repo `musicreviews-frontend`). Fase 4 cerrada en 9 pasos — desde AuthContext hasta panel admin funcional con CRUD de usuarios, artistas y moderación de reseñas. Ver `docs/integracion.md`.
+
+**Limitaciones conocidas y documentadas honestamente** (todas con justificación de alcance del TFG): sin verificación de email, sin cambio de contraseña, sin subida real de archivos (URL como workaround), `DELETE /api/resenas/{id}` no verifica owner/admin en el backend, sin "seguir artista", sin orden "Mejor valorados" en catálogo (requiere agregado de reseñas). Ver `docs/integracion.md § 13` para la lista completa con causas y referencias a las secciones donde se discuten.
