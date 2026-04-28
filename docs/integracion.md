@@ -1239,7 +1239,218 @@ Frontend en `:5173` + backend Spring Boot en `:8080`. Recarga del navegador con 
 
 ---
 
-## 8. Resumen de cambios durante esta sesión
+## 8. Paso 6 — Detalle de álbum y de artista
+
+### El problema que resuelve
+
+`/album/:id` y `/artista/:id` seguían con datos mock pegados al componente. La navegación funcionaba (paso 4) y los enlaces estaban bien (paso 5) pero al aterrizar se veía siempre el mismo "DAMN. de Kendrick Lamar". Se cierra la lectura de catálogo + detalle.
+
+### `useParams` para leer el `:id` de la URL
+
+React Router expone los parámetros de la URL con el hook `useParams`:
+
+```jsx
+import { useParams } from "react-router-dom";
+
+const { id } = useParams();
+```
+
+`id` es el valor que está en el sitio de `:id` en la ruta `/album/:id`. Como viene como string ("123"), si se necesita comparar con un número del backend (`Number(id) !== otro.id`), se convierte explícitamente.
+
+### Capa de servicios — dos nuevos
+
+| Fichero | Funciones | Notas |
+|---|---|---|
+| `services/resenas.js` *(nuevo)* | `getResenasPorAlbum`, `getResenasPorUsuario`, `getResenaUsuarioAlbum` | Solo lecturas públicas. Las acciones de escritura (POST/PUT/DELETE) son del paso 8. |
+| `services/favoritos.js` *(nuevo)* | `esFavorito`, `getFavoritosUsuario`, `agregarFavorito`, `quitarFavorito` | Todas requieren token. Lo reciben como parámetro de la función para mantener los servicios "puros" (sin acoplar a localStorage o React). |
+
+**Patrón de auth:** la función recibe el `token` como último parámetro y lo pone en el header:
+
+```js
+export async function agregarFavorito(usuarioId, albumId, token) {
+  const res = await fetch(`${API}/favoritos`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({ usuario: { id: usuarioId }, album: { id: albumId } }),
+  });
+  // ...
+}
+```
+
+El componente lo invoca leyendo el token de `useAuth()`:
+
+```jsx
+const { usuario, token } = useAuth();
+await agregarFavorito(usuario.id, album.id, token);
+```
+
+**Por qué pasar el token explícitamente** y no leerlo desde dentro del servicio (de localStorage o de un módulo singleton):
+
+- Los servicios siguen siendo funciones puras: mismo input → mismo output. Más fáciles de testear.
+- Quien llama tiene el control: si quiere usar otro token (admin promoviendo, etc.) puede hacerlo sin tocar la capa de red.
+- Acoplamiento mínimo: si un día se cambia el storage del token (a sessionStorage, cookies, IndexedDB), solo se toca el contexto, no los 6 ficheros de services.
+
+`esFavorito` tiene un guard: si no hay token (sin sesión), devuelve `false` sin llamar al backend. Evita 401s innecesarios cuando el componente se monta sin sesión.
+
+### `DetalleAlbum.jsx`
+
+**Tres fetches encadenados / paralelos:**
+
+```jsx
+useEffect(() => {
+  Promise.all([getAlbum(id), getResenasPorAlbum(id)])
+    .then(([a, r]) => {
+      setAlbum(a);
+      setResenas(r);
+      // Ahora ya tenemos el artistaId, podemos pedir su discografía
+      return getAlbumes({ artistaId: a.artista.id, size: 5 });
+    })
+    .then((paginaAlbumes) => {
+      setMasDelArtista(paginaAlbumes.content.filter((al) => al.id !== Number(id)).slice(0, 4));
+    })
+    .catch((err) => setError(err.message));
+}, [id]);
+```
+
+Las dos primeras peticiones van **en paralelo** (no dependen entre sí). La tercera (más álbumes del artista) **espera a la primera** porque necesita el `artista.id` que viene en el álbum. Combinar `Promise.all` con un `then` encadenado es la forma natural de expresarlo.
+
+`filter((al) => al.id !== Number(id))` excluye el álbum que estamos viendo de la sección "más del artista" — sería redundante mostrarlo allí.
+
+**Comprobación de favorito en useEffect separado:**
+
+```jsx
+useEffect(() => {
+  if (!usuario || !token) return;
+  esFavorito(usuario.id, Number(id), token)
+    .then(setFavorito)
+    .catch(() => {});
+}, [usuario, token, id]);
+```
+
+Se separa porque depende de `usuario` y `token` (que pueden cambiar tras login/logout sin que cambie `id`). Si lo metiera en el useEffect anterior, al iniciar sesión sin recargar la página no se actualizaría el estado del corazón. El `.catch(() => {})` silencia errores: si el usuario no tiene permiso o algo falla, simplemente se asume que no está en favoritos. No bloquea la pantalla.
+
+**Toggle favorito con guard contra doble click:**
+
+```jsx
+const [favoritoOcupado, setFavoritoOcupado] = useState(false);
+
+async function handleToggleFavorito() {
+  setFavoritoOcupado(true);
+  try {
+    if (favorito) {
+      await quitarFavorito(usuario.id, Number(id), token);
+      setFavorito(false);
+    } else {
+      await agregarFavorito(usuario.id, Number(id), token);
+      setFavorito(true);
+    }
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setFavoritoOcupado(false);
+  }
+}
+```
+
+`favoritoOcupado` se usa en `disabled={favoritoOcupado}` y en `opacity-50` para evitar que un click rápido produzca dos peticiones (lo que provocaría 400 "ya está en favoritos" o 404 al borrar lo que ya no existe).
+
+**Botón cambia según haya sesión:**
+
+```jsx
+{usuario ? (
+  <button onClick={handleToggleFavorito}>
+    {favorito ? "♥ En favoritos" : "♡ Añadir a favoritos"}
+  </button>
+) : (
+  <Link to="/login">♡ Inicia sesión para guardar</Link>
+)}
+```
+
+Sin sesión, el botón se convierte en un Link a `/login`. Honesto: el usuario sabe qué le va a pasar al hacer click en lugar de ver un botón que no hace nada.
+
+**Cálculo de la puntuación media en cliente:**
+
+```jsx
+const puntuacionMedia = resenas && resenas.length > 0
+  ? resenas.reduce((acc, r) => acc + r.puntuacion, 0) / resenas.length
+  : null;
+```
+
+El backend no devuelve `puntuacionMedia` por álbum (el endpoint `/api/albumes/{id}` solo da los datos del álbum, no agregados de reseñas). Como ya cargamos las reseñas, calcular la media en cliente es trivial. Si no hay reseñas, `puntuacionMedia = null` y el bloque entero no se renderiza (en lugar de "0★ (0 reseñas)").
+
+**Pasar `albumId` a `/crear-resena` por `state`:**
+
+```jsx
+<Link to="/crear-resena" state={{ albumId: album.id }}>
+  ✎ Escribir reseña
+</Link>
+```
+
+`location.state` permite pasar datos a la siguiente ruta sin meterlos en la URL. Cuando se conecte `CrearResena` (paso 8), leerá `location.state.albumId` para saber qué álbum se va a reseñar. Si entra a `/crear-resena` directamente (sin venir de un álbum), `state` será `null` y mostrará un selector de álbum.
+
+### `DetalleArtista.jsx`
+
+Más sencilla. Dos fetches en paralelo:
+
+```jsx
+Promise.all([
+  getArtista(id),
+  getAlbumes({ artistaId: id, size: 100 }),
+])
+```
+
+`size: 100` para traer toda la discografía de una vez (Spring Data acepta hasta 2000 por defecto, pero un artista con 100+ álbumes es una rareza extrema).
+
+**Discografía ordenada por fecha de lanzamiento descendente** (más recientes primero):
+
+```jsx
+const ordenados = [...paginaAlbumes.content].sort((a, b) => {
+  if (!a.fechaLanzamiento) return 1;
+  if (!b.fechaLanzamiento) return -1;
+  return b.fechaLanzamiento.localeCompare(a.fechaLanzamiento);
+});
+```
+
+`localeCompare` sobre el ISO date string da el orden correcto sin parsear a Date. Las fechas null se mandan al final.
+
+### Decisiones puntuales en DetalleArtista
+
+| Decisión | Razón |
+|---|---|
+| Sin sección "Reseñas recientes" | El backend no expone "todas las reseñas de un artista". Hacerlo desde el frontend requiere N+1 (una fetch por álbum), inaceptable con artistas prolíficos. Se documenta como mejora futura con endpoint dedicado. |
+| Stats reducidas a "Álbumes" | El total de reseñas y la media del artista requieren agregado del backend (existe parcialmente en `/api/estadisticas/top-artistas` pero solo top 10). En lugar de mostrar "—" en dos cards o calcular mal, se muestra solo lo que se tiene de forma fiable. |
+| Botón "Seguir artista" eliminado | No hay endpoint de seguir/dejar de seguir artistas en el backend. Mantenerlo como toggle local sería engañoso para el usuario (parece que sigue al artista pero al refrescar no se guarda). Se reincorporará si en futuro se añade el endpoint. |
+
+Estas decisiones son honestas con la estructura del backend. La página "se ve menos" que el mock pero todo lo que muestra es real y funcional.
+
+### Verificación — pruebas manuales
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Click en una card del catálogo o de Top Álbumes → `/album/:id` | Carga datos reales del álbum y sus reseñas | ✅ |
+| Detalle de álbum sin reseñas | Estado vacío "Sé el primero en reseñar" + CTA a `/crear-resena` | ✅ |
+| Detalle de álbum con reseñas | Lista con username clicable a `/perfil/:username`, fecha formateada, "editada" si fechaEdicion no es null | ✅ |
+| Detalle de álbum, ver "Más del artista" | Hasta 4 cards con álbumes del mismo artista (excluyendo el actual) | ✅ |
+| Click en nombre del artista en el header → `/artista/:id` | Carga datos reales del artista y su discografía completa | ✅ |
+| Sin sesión, click en "Añadir a favoritos" | El botón se ha convertido en Link a `/login` | ✅ |
+| Con sesión, click en "♡ Añadir a favoritos" | POST al backend, botón pasa a "♥ En favoritos" sin recargar | ✅ |
+| Click rápido dos veces seguidas | El segundo click se ignora gracias a `disabled={favoritoOcupado}` | ✅ |
+| Volver a refrescar la página estando logueado y con favorito guardado | El botón aparece en estado "♥ En favoritos" (carga inicial) | ✅ |
+| Quitar de favoritos | DELETE al backend, vuelve al estado "♡" | ✅ |
+
+### Limitaciones conocidas
+
+- **No hay endpoint para "todas las reseñas de un artista"** — DetalleArtista carece de la sección que mostraba reseñas recientes. Mejora futura.
+- **No hay endpoint de "seguir artista"** — botón eliminado.
+- **No hay endpoint para "media + total reseñas por artista"** — stats reducidas a álbumes.
+- **El mock de descripción de álbum** no se llena automáticamente desde Spotify (el backend no lo importa). Las descripciones siguen `null` en muchos álbumes y el bloque correspondiente no se renderiza.
+
+---
+
+## 9. Resumen de cambios durante esta sesión hasta paso 6
 
 ### Backend
 
@@ -1277,24 +1488,25 @@ Frontend en `:5173` + backend Spring Boot en `:8080`. Recarga del navegador con 
 | `pages/Rankings.jsx` | 5 fetches en paralelo con `Promise.all`: stats, top álbumes, top artistas, géneros, actividad | Paso 5 |
 | `components/ui/CatalogoCard.jsx` | `rating` opcional (`{rating != null && ...}`) — el listado paginado del backend no devuelve puntuación | Paso 5 |
 | `components/ui/ResenaCard.jsx` | Convertido a `<Link to={`/album/${id}`}>` para que las reseñas sean clicables | Paso 5 |
+| `services/resenas.js` *(nuevo)* | `getResenasPorAlbum`, `getResenasPorUsuario`, `getResenaUsuarioAlbum` (lecturas públicas) | Paso 6 |
+| `services/favoritos.js` *(nuevo)* | `esFavorito`, `getFavoritosUsuario`, `agregarFavorito`, `quitarFavorito` (todas con token) | Paso 6 |
+| `pages/DetalleAlbum.jsx` | `useParams` + 3 fetches; toggle favorito funcional con auth; reseñas reales con username clicable; "Más del artista" filtrando el actual | Paso 6 |
+| `pages/DetalleArtista.jsx` | `useParams` + 2 fetches paralelos; discografía completa ordenada por fecha desc; stats reducidas a álbumes; botón "Seguir artista" eliminado (no hay endpoint) | Paso 6 |
 | **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
 
-**14 ficheros tocados + 5 nuevos + 10 borrados de basura/docs antiguos.**
+**18 ficheros tocados + 7 nuevos + 10 borrados de basura/docs antiguos.**
 
 ---
 
-## 9. Estado al cerrar esta entrega
+## 10. Estado al cerrar esta entrega
 
-✅ **Paso 1 (AuthContext) completo.**
-✅ **Paso 2 (Login + Registro funcionales contra el backend) completo** — incluye el fix de B6 (FormInput sin propagar `value`/`onChange`).
-✅ **Paso 3 (Navbar dinámico) completo** — renderizado condicional sin/con sesión, logout funcional, avatar real, link Admin condicionado al rol.
-✅ **Paso 4 (Rutas protegidas) completo** — wrappers `<RutaProtegida>` y `<RutaAdmin>` con redirección a `/login` recordando la URL original.
-✅ **Paso 5 (Páginas públicas con datos reales) completo** — Inicio, Catálogo, Búsqueda y Rankings consumen datos reales del backend. Capa de servicios separada por dominio. Catálogo con paginación server-side, géneros dinámicos y búsqueda con debounce de 300 ms. Hero rediseñado para mostrar la mejor reseña reciente en lugar del mock estático "DAMN.".
+✅ **Pasos 1-5 completos** (AuthContext, Login+Registro, Navbar dinámico, Rutas protegidas, Páginas públicas con datos reales).
+✅ **Paso 6 (Detalle de álbum y de artista) completo** — `/album/:id` y `/artista/:id` consumen datos reales. Tres fetches encadenados/paralelos en DetalleAlbum (álbum + reseñas → más del artista). Toggle de favoritos funcional con auth. Reseñas con username clicable. DetalleArtista con discografía ordenada por fecha. Servicios `resenas.js` y `favoritos.js` añadidos.
 ✅ **Backend con 5 bugs arreglados y todas las relaciones LAZY serializando correctamente.**
 ✅ **38/38 tests unitarios verdes.**
 ✅ **Postman documentado con flujo end-to-end del login + CRUD de reseñas y favoritos.**
 
-🔜 **Siguiente: paso 6 (Páginas de álbum y artista con datos reales).** `/album/:id` y `/artista/:id` siguen mostrando mock. Hay que conectarlas con `GET /api/albumes/{id}` y `GET /api/artistas/{id}`, listar las reseñas reales del álbum, mostrar la discografía del artista (`GET /api/albumes?artistaId=`) y los `useParams` para leer el `:id` de la URL.
+🔜 **Siguiente: paso 7 (Páginas de usuario).** `/perfil/:username`, `/editar-perfil`, `/favoritos` siguen mock. Hay que conectarlas con `GET /api/usuarios/username/{username}`, `GET /api/resenas?usuarioId=`, `GET /api/favoritos?usuarioId=` y `PUT /api/usuarios/{id}` para la edición de perfil.
 
 ---
 
