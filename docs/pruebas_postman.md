@@ -24,17 +24,22 @@ Base URL: `http://localhost:8080`
 | Método | Ruta | Body | Resultado |
 |---|---|---|---|
 | POST | `/api/albumes` | `{ "titulo": "OK Computer", "portada": "https://...", "fechaLanzamiento": "1997-05-21", "genero": "Rock", "descripcion": "...", "artista": { "id": 1 } }` | 200 ✅ |
-| GET | `/api/albumes` | — | 200 + Page (12 álbumes, totalElements 469, totalPages 40) ✅ |
+| GET | `/api/albumes` | — | 200 + Page (12 álbumes, totalElements 732, totalPages 61) ✅ |
 | GET | `/api/albumes?page=1&size=12` | — | 200 + Page página 2 ✅ |
-| GET | `/api/albumes?titulo=the&page=0&size=5` | — | 200 + Page filtrada paginada ✅ |
+| GET | `/api/albumes?titulo=the&page=0&size=5` | — | 200 + Page filtrada paginada por título ✅ |
+| **GET** | **`/api/albumes?q=Rojuu`** *(añadido 28/04)* | — | 200 + Page con álbumes cuyo título O nombre de artista contiene "Rojuu" — devuelve sus álbumes (Starina, etc.) ✅ |
 | GET | `/api/albumes?artistaId=37&page=0` | — | 200 + Page filtrada por artista ✅ |
 | GET | `/api/albumes/3` | — | 200 + álbum ✅ |
 | GET | `/api/albumes?titulo=ok` | — | 200 + lista filtrada ✅ |
 | GET | `/api/albumes?genero=Rock` | — | 200 + lista filtrada ✅ |
+| **GET** | **`/api/albumes?sort=recientes`** *(añadido 28/04)* | — | 200 + Page ordenada por `fechaLanzamiento` descendente ✅ |
+| **GET** | **`/api/albumes?sort=antiguos`** | — | 200 + ordenada por `fechaLanzamiento` ascendente ✅ |
+| **GET** | **`/api/albumes?sort=za`** | — | 200 + ordenada por `titulo` descendente ✅ |
+| GET | `/api/albumes?sort=az` *(default)* | — | 200 + ordenada por `titulo` ascendente ✅ |
 | PUT | `/api/albumes/3` | campos actualizados | 200 ✅ |
 | DELETE | `/api/albumes/{id}` | — | 204 ✅ |
 
-**Nota:** La respuesta de listado ahora es un objeto `Page` con `content` (álbumes), `page.totalElements`, `page.totalPages` y `page.number`. Valores por defecto: `page=0`, `size=12`, ordenado por título ascendente.
+**Nota:** La respuesta de listado es un objeto `Page` con `content` (álbumes), `page.totalElements`, `page.totalPages` y `page.number`. Valores por defecto: `page=0`, `size=12`, `sort=az` (ordenado por título ascendente). El parámetro `?q=` busca tanto en título de álbum como en nombre de artista (OR, case-insensitive); `?titulo=` queda para búsqueda solo por título.
 
 ---
 
@@ -43,9 +48,11 @@ Base URL: `http://localhost:8080`
 | Método | Ruta | Body | Resultado |
 |---|---|---|---|
 | POST | `/api/usuarios` | `{ "username": "pablo", "email": "pablo@example.com", "password": "1234" }` | 200 ✅ |
-| GET | `/api/usuarios` | — | 200 + lista ✅ |
+| GET | `/api/usuarios` *(solo ADMIN desde 28/04)* | — | 200 + lista (con auth ADMIN); 403 con USER ✅ |
 | GET | `/api/usuarios/2` | — | 200 + usuario ✅ |
-| PUT | `/api/usuarios/2` | `{ "username": "pablo2", "bio": "..." }` | 200 ✅ |
+| GET | `/api/usuarios/username/{username}` *(público)* | — | 200 + usuario; 404 si no existe ✅ |
+| PUT | `/api/usuarios/2` | `{ "username": "pablo2", "bio": "...", "fotoPerfil": "https://..." }` | 200 ✅ |
+| **PATCH** | `/api/usuarios/{id}/activo` *(solo ADMIN, añadido 28/04)* | `{ "activo": false }` | 200 + usuario actualizado ✅ |
 | DELETE | `/api/usuarios/{id}` | — | 204 ✅ |
 | POST | `/api/usuarios` | email ya existente | 400 ✅ |
 | GET | `/api/usuarios/999` | — | 404 ✅ |

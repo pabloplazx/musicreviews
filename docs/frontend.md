@@ -549,6 +549,12 @@ El "paso 9" original del plan (subida de archivos) ya se simplificó a URL en pa
 
 Detalle completo: [`integracion.md` § 11](integracion.md).
 
+### Pulido final (mismo día, commits sueltos posteriores)
+
+- **Orden en /catalogo** funcional con 4 opciones: A→Z, Z→A, Más recientes, Más antiguos (`?sort=` en backend).
+- **Hero del Inicio**: card aumentada de `w-55` a `w-80`, tipografía ampliada, lógica de elección cambiada para que la reseña destacada tenga **comentario** (no solo estrellas).
+- **Color del Hero**: `bg-card` → `bg-surface` para diferenciarlo del navbar y de las cards interiores. Se reutiliza el verde oscuro que ya estaba en la paleta para la CTA del final, mantiene coherencia.
+
 ### Decisiones técnicas
 
 | Decisión | Razón |
