@@ -23,6 +23,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(errorBody(400, e.getMessage()));
     }
 
+    @ExceptionHandler(AccesoDenegadoException.class)
+    public ResponseEntity<Map<String, Object>> handleForbidden(AccesoDenegadoException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorBody(403, e.getMessage()));
+    }
+
     private Map<String, Object> errorBody(int status, String mensaje) {
         return Map.of(
                 "timestamp", LocalDateTime.now().toString(),

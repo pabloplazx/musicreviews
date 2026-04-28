@@ -1,9 +1,11 @@
 package com.musicreviews.backend.service;
 
+import com.musicreviews.backend.exception.AccesoDenegadoException;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Favorito;
 import com.musicreviews.backend.repository.FavoritoRepository;
+import com.musicreviews.backend.repository.UsuarioRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,6 +21,7 @@ public class FavoritoService {
 
     // final + @RequiredArgsConstructor reemplaza @Autowired. Los campos inmutables son más seguros y fáciles de testear.
     private final FavoritoRepository favoritoRepository;
+    private final UsuarioRepository usuarioRepository;
 
     // Necesario para forzar la recarga de relaciones LAZY tras un save() dentro de la misma transacción.
     private final EntityManager entityManager;
@@ -36,8 +39,16 @@ public class FavoritoService {
 
     // @Transactional permite que entityManager.refresh() recargue las relaciones LAZY desde la BD
     // tras el save(), evitando que Spring devuelva la instancia cacheada con campos nulos.
+    // Verifica que el usuario solo añade favoritos a su propia lista (o es ADMIN).
     @Transactional
-    public Favorito agregar(Favorito favorito) {
+    public Favorito agregar(Favorito favorito, String emailLlamante, boolean esAdmin) {
+        if (!esAdmin) {
+            Long idLlamante = idDelEmail(emailLlamante);
+            if (!favorito.getUsuario().getId().equals(idLlamante)) {
+                throw new AccesoDenegadoException("Solo puedes gestionar tus propios favoritos");
+            }
+        }
+
         if (favoritoRepository.existsByUsuarioIdAndAlbumId(
                 favorito.getUsuario().getId(), favorito.getAlbum().getId())) {
             throw new ReglaNegocioException("El álbum ya está en favoritos");
@@ -48,11 +59,25 @@ public class FavoritoService {
     }
 
     // @Transactional necesario porque deleteBy... es una operación de escritura personalizada de JPA.
+    // Verifica que el usuario solo borra de su propia lista (o es ADMIN).
     @Transactional
-    public void eliminar(Long usuarioId, Long albumId) {
+    public void eliminar(Long usuarioId, Long albumId, String emailLlamante, boolean esAdmin) {
+        if (!esAdmin) {
+            Long idLlamante = idDelEmail(emailLlamante);
+            if (!usuarioId.equals(idLlamante)) {
+                throw new AccesoDenegadoException("Solo puedes gestionar tus propios favoritos");
+            }
+        }
+
         if (!favoritoRepository.existsByUsuarioIdAndAlbumId(usuarioId, albumId)) {
             throw new RecursoNoEncontradoException("El álbum no está en favoritos");
         }
         favoritoRepository.deleteByUsuarioIdAndAlbumId(usuarioId, albumId);
+    }
+
+    private Long idDelEmail(String email) {
+        return usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new AccesoDenegadoException("Sesión inválida"))
+                .getId();
     }
 }

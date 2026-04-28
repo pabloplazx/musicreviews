@@ -1240,3 +1240,70 @@ Tras cerrar el panel admin se hicieron tres ajustes pequeños pero visibles:
 ### Bug puntual identificado durante las pruebas
 
 Durante las pruebas del CRUD de reseñas, "Editar reseña" pareció no funcionar tras hacer muchos cambios de archivos. Tras `Ctrl+F5` funcionó. Aprendizaje: con HMR de Vite y muchos cambios estructurales, a veces hace falta un refresh manual del navegador. Mencionable en la defensa si te preguntan por bugs encontrados.
+
+---
+
+## Semana 10 — Fase 4, sesión 9: auditoría de seguridad y endurecimiento (28/04/2026)
+
+**Fase:** FASE 4 — cierre con auditoría crítica.
+
+### Objetivo
+
+Antes de presentar el TFG, revisión sistemática del backend buscando lo que un evaluador exigente podría preguntar. Resultado: identificar **6 vulnerabilidades reales de "falta de verificación de propiedad"** y arreglarlas.
+
+### Vulnerabilidades detectadas
+
+`SecurityConfig` exigía autenticación pero **no verificaba ownership del recurso**. Cualquier usuario con su token podía afectar recursos ajenos vía `curl`/Postman aunque la UI no lo permitiera:
+
+- `POST /api/resenas` — suplantación de autoría (mandar `usuario.id` de otro)
+- `PUT /api/resenas/{id}` — editar reseñas ajenas
+- `DELETE /api/resenas/{id}` — borrar reseñas ajenas
+- `PUT /api/usuarios/{id}` — cambiar perfil ajeno
+- `DELETE /api/usuarios/{id}` — borrar cuenta ajena
+- `POST/DELETE /api/favoritos` — gestionar favoritos ajenos
+
+### Mitigación
+
+**Patrón:** Controller lee `Authentication auth` (lo inyecta Spring Security automáticamente). El service recibe `(emailLlamante, esAdmin)` y compara con el owner del recurso. Si no coincide y no es ADMIN, lanza `AccesoDenegadoException` que el `GlobalExceptionHandler` traduce a HTTP 403 con JSON uniforme.
+
+### Cambios
+
+**Backend (8 ficheros):**
+- `exception/AccesoDenegadoException.java` (nuevo)
+- `exception/GlobalExceptionHandler.java` (handler 403)
+- `service/ResenaService.java` (3 métodos verificados; `crear` ahora también consulta UsuarioRepository para resolver id desde email)
+- `service/UsuarioService.java` (2 métodos)
+- `service/FavoritoService.java` (2 métodos)
+- 3 controllers actualizados con parámetro `Authentication auth` y helper `esAdmin(auth)`
+
+**Tests (3 ficheros):**
+- 12 tests nuevos cubriendo cada caso de propiedad (otro usuario → 403; ADMIN → permitido)
+- Tests existentes adaptados a las nuevas firmas
+
+**Total: 38 → 50 tests verdes.**
+
+### Documentación generada
+
+- `docs/auditoria_seguridad.md` (nuevo) — informe completo del proceso (auditoría, análisis de impacto, plan, implementación, verificación, resultado, limitaciones aceptadas, aprendizajes para la defensa).
+- `docs/tests_unitarios.md` actualizado con los 12 tests nuevos marcados con 🆕.
+- `docs/integracion.md § 13` actualizado: la limitación "DELETE de reseña no verifica owner" se mueve de "limitaciones que quedan" a "limitaciones que se resolvieron".
+
+### Verificación manual con curl (esperada tras reiniciar backend)
+
+| Caso | Esperado |
+|---|---|
+| `curl PUT /api/resenas/5` con token de maría sobre reseña de carlos | 403 + `{"mensaje":"Solo puedes editar tus propias reseñas"}` |
+| `curl POST /api/resenas` con `{"usuario":{"id":3}, ...}` y token de maría | 403 + `{"mensaje":"Solo puedes crear reseñas en tu propio nombre"}` |
+| `curl PUT /api/usuarios/3` con token de maría | 403 + `{"mensaje":"Solo puedes editar tu propio perfil"}` |
+| `curl DELETE /api/resenas/5` con token de admin | 204 (admin permitido) |
+| Maria edita su propia reseña | 200 (flujo legítimo intacto) |
+
+### Estado al cerrar la sesión
+
+✅ **Fase 4 cerrada al 100%** con auditoría de seguridad incluida.
+✅ **50/50 tests unitarios verdes**, 12 nuevos cubren propiedad.
+✅ **Tres capas de seguridad** (autenticación + rol + propiedad) ahora completas.
+
+🔜 **Fase 5 — pendiente.** Posibles caminos: despliegue (Render/Heroku/AWS), tests de integración con MockMvc, validaciones declarativas, refresh tokens.
+
+Detalle completo del proceso de auditoría: [`auditoria_seguridad.md`](auditoria_seguridad.md).

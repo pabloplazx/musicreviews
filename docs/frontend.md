@@ -555,6 +555,16 @@ Detalle completo: [`integracion.md` § 11](integracion.md).
 - **Hero del Inicio**: card aumentada de `w-55` a `w-80`, tipografía ampliada, lógica de elección cambiada para que la reseña destacada tenga **comentario** (no solo estrellas).
 - **Color del Hero**: `bg-card` → `bg-surface` para diferenciarlo del navbar y de las cards interiores. Se reutiliza el verde oscuro que ya estaba en la paleta para la CTA del final, mantiene coherencia.
 
+### Sesión 9 (28/04/2026) — auditoría de seguridad del backend
+
+Tras la integración completa, una pasada de revisión crítica antes de la presentación detectó 6 endpoints donde el backend permitía a un usuario autenticado modificar recursos ajenos (reseñas, perfiles, favoritos de otros usuarios) llamando directamente al API con su token. La UI no lo permitía pero la API sí — agujero real explotable con curl/Postman.
+
+**Fix**: el controller lee el `Authentication` que inyecta Spring Security; el service compara el email del JWT con el owner del recurso. Si no coincide y no es ADMIN, lanza `AccesoDenegadoException` (HTTP 403). 12 tests nuevos cubren los casos de propiedad — total **50/50 tests verdes** (antes 38).
+
+El frontend no necesita cambios porque ya envía solo IDs propios en cada operación legítima. Solo cambia el comportamiento si alguien intenta usar la API con malas intenciones.
+
+Documento completo del proceso: [`auditoria_seguridad.md`](auditoria_seguridad.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |
