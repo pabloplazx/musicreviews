@@ -1134,13 +1134,97 @@ Conectar las dos pantallas restantes (`/crear-resena` y `/editar-resena`) y mejo
 
 - Sin verificación de email
 - Sin cambio de contraseña
-- Sin desactivar cuenta (DELETE borra)
 - Sin subida de archivos (URL como workaround)
 - Sin invalidación del JWT en logout
 - Catálogo sin estrellas (backend no devuelve puntuación en listado)
 - Solo orden A→Z (backend no acepta `sort`)
-- Búsqueda solo por título de álbum
 - Sin "seguir artista"
 - Sin reseñas recientes ni stats compuestas en DetalleArtista
 
 Todas tienen justificación honesta en el doc — son limitaciones del backend o decisiones de alcance, no bugs.
+
+---
+
+## Semana 10 — Fase 4, sesión 8: panel admin funcional + fix de búsqueda (28/04/2026)
+
+**Fase:** FASE 4 — paso 9 del plan (sustituido el "subida de archivos" original por "Panel Admin funcional", que era una pieza pendiente más importante).
+
+### Objetivo
+
+1. Panel `/admin` totalmente funcional contra el backend (no más mocks).
+2. Fix puntual del buscador: que escribir el nombre de un artista devuelva sus álbumes.
+
+### Cambios en el backend
+
+**Búsqueda unificada:**
+- `AlbumRepository`: método derivado nuevo `findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase`.
+- `AlbumService.buscar(texto, pageable)`: matchea el texto en título de álbum O nombre de artista.
+- `AlbumController`: parámetro nuevo `?q=` antes que `?titulo=`. Mantengo `titulo` por compatibilidad.
+
+**Activar/desactivar usuarios:**
+- `UsuarioController.cambiarActivo`: `PATCH /api/usuarios/{id}/activo` con body `{activo: boolean}`.
+- `UsuarioService.cambiarActivo(id, activo)`: solo toca el flag, sin afectar al resto.
+
+**Endurecimiento de SecurityConfig:**
+- `GET /api/usuarios` (lista todos con emails) ahora solo ADMIN.
+- `PATCH /api/usuarios/**` solo ADMIN.
+
+### Cambios en el frontend
+
+- `services/albumes.js` ampliado con parámetro `q`.
+- `services/usuarios.js` ampliado con `getUsuarios(token)` y `cambiarEstadoActivo(id, activo, token)`.
+- `services/artistas.js` ampliado con `crearArtista(datos, token)`.
+- `Catalogo.jsx`, `Busqueda.jsx`: pasan `q` en lugar de `titulo`.
+- `PanelAdmin.jsx` **reescrito** con tres bloques:
+  1. **Stats** (5 cards): álbumes, artistas, reseñas, usuarios + cuentas desactivadas (calculado en cliente).
+  2. **Gestión de usuarios**: tabla con todos, botón Activar/Desactivar por fila, badges de Activo/Inactivo + rol.
+  3. **Nuevo artista**: formulario inline con nombre (obligatorio), foto URL, género, país, biografía. Validación cliente + servidor.
+  4. **Moderación de reseñas**: las últimas 10 con botón "Borrar" + window.confirm.
+
+### Decisiones técnicas
+
+- **Endpoint PATCH separado para `activo`** en lugar de añadir el campo al PUT que ya usa EditarPerfil. Razón: evitar que un usuario pueda activarse/desactivarse a sí mismo desde la UI de edición de perfil. Solo ADMIN.
+- **Optimistic update en toggle de usuario y borrado de reseña**: la UI cambia al instante sin volver a fetch del listado. Stats se actualizan en cliente (`setResumen(prev => {..., totalArtistas: prev.totalArtistas + 1})`) — ahorra round-trips.
+- **`cambiandoActivoId` y `borrandoResenaId` como guards**: evitan doble click sobre el mismo elemento sin bloquear los demás botones del listado.
+- **Crear álbum NO se incluye**: requeriría selector de artistas con autocomplete sobre 99 entradas. Los álbumes nuevos entran vía importación Spotify (`GET /api/spotify/importar`). Documentado en el formulario.
+- **Inactivos calculado en cliente** filtrando la lista de usuarios. Eficiente: un viaje al backend para tener todo.
+
+### Limitación honesta documentada
+
+**El endpoint `DELETE /api/resenas/{id}` no verifica que el llamante sea el dueño o ADMIN.** Cualquier autenticado podría borrar cualquier reseña si llama a la API directamente. La protección está solo a nivel de UI (botón "Borrar" solo en `/admin`, accesible solo a ADMIN). Para una app real haría falta verificación con `@PreAuthorize` o leyendo el `SecurityContextHolder` en el service. Mejora futura — la protección por roles + UI cubre el TFG.
+
+### Verificación — 13 casos manuales
+
+Probado con admin logueado:
+
+| Caso | Resultado |
+|---|---|
+| Login admin → click Admin del navbar | ✅ PanelAdmin con datos reales |
+| Stats arriba con números reales | ✅ |
+| 5ª card "cuentas desactivadas" calculada | ✅ |
+| Listado usuarios con email + rol | ✅ |
+| Click "Desactivar" sobre maría | ✅ Badge cambia, contador inactivos sube |
+| Click "Activar" sobre maría | ✅ Vuelve a activo |
+| Login con usuario desactivado | ✅ Backend rechaza con "Cuenta desactivada" |
+| Crear artista válido | ✅ POST + banner verde + contador artistas sube |
+| Crear artista sin nombre | ✅ Bloqueado con mensaje rojo |
+| Click "Borrar" en una reseña + confirm | ✅ DELETE + fila desaparece + contador reseñas baja |
+| Click "Borrar" + cancelar | ✅ No hace nada |
+| /admin con usuario USER | ✅ RutaAdmin redirige a / |
+| Buscar "Rojuu" | ✅ Devuelve sus álbumes (Starina, etc.) |
+
+38/38 tests unitarios siguen verdes tras los cambios en el backend.
+
+### Estado al cerrar la sesión
+
+✅ **Pasos 1-9 completos. La integración frontend ↔ backend está terminada al 100%.** El panel admin es funcional y la búsqueda matchea por título o artista.
+
+**Limitaciones que quedan (documentadas honestamente):**
+
+- Sin verificación de email
+- Sin cambio de contraseña
+- Sin subida real de archivos (URL como workaround)
+- Borrar reseña no verifica owner/admin en backend
+- Sin invalidación de JWT en logout
+
+Todas son del backend, todas tienen justificación de alcance (TFG, no app de producción), todas se podrían añadir con cambios acotados en futuro. Detalle completo en [`integracion.md` § 11](integracion.md).

@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 // Esta clase expone los endpoints REST relacionados con los usuarios.
 // La ruta base de todos sus endpoints es /api/usuarios.
@@ -43,6 +44,14 @@ public class UsuarioController {
     @PutMapping("/{id}")
     public ResponseEntity<Usuario> actualizar(@PathVariable Long id, @RequestBody Usuario datos) {
         return ResponseEntity.ok(usuarioService.actualizar(id, datos));
+    }
+
+    // PATCH /api/usuarios/{id}/activo → activa o desactiva una cuenta. Solo ADMIN.
+    // Body: {"activo": true|false}.
+    @PatchMapping("/{id}/activo")
+    public ResponseEntity<Usuario> cambiarActivo(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
+        boolean activo = body.getOrDefault("activo", true);
+        return ResponseEntity.ok(usuarioService.cambiarActivo(id, activo));
     }
 
     // DELETE /api/usuarios/{id} → elimina un usuario. 204 si ok, 404 si no existe.

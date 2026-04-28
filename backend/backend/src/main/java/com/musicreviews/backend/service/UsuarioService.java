@@ -73,6 +73,16 @@ public class UsuarioService {
         usuarioRepository.save(usuario);
     }
 
+    // Cambia el flag "activo" del usuario sin tocar el resto de campos.
+    // Pensado para uso desde el panel de administración (PATCH /api/usuarios/{id}/activo).
+    @Transactional
+    public Usuario cambiarActivo(Long id, boolean activo) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+        usuario.setActivo(activo);
+        return usuarioRepository.save(usuario);
+    }
+
     @Transactional
     public void eliminar(Long id) {
         if (!usuarioRepository.existsById(id)) {

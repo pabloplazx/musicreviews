@@ -52,13 +52,15 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/resenas/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/estadisticas/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/usuarios/username/**").permitAll()
-                // Solo ADMIN: gestión del catálogo e importación desde Spotify
+                // Solo ADMIN: gestión del catálogo, lista de usuarios e importación desde Spotify
                 .requestMatchers(HttpMethod.POST, "/api/artistas/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/artistas/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/artistas/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/albumes/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/albumes/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.DELETE, "/api/albumes/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/usuarios").hasRole("ADMIN") // listar todos: solo ADMIN (expone emails)
+                .requestMatchers(HttpMethod.PATCH, "/api/usuarios/**").hasRole("ADMIN") // activar/desactivar cuentas
                 .requestMatchers("/api/spotify/**").permitAll()
                 // Resto de rutas: usuario autenticado
                 .anyRequest().authenticated()

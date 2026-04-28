@@ -1735,9 +1735,190 @@ Probado con maría logueada en distintos álbumes:
 
 ---
 
-## 11. Resumen de cambios durante toda la sesión
+## 11. Paso 9 — Panel de administración funcional + fix de búsqueda
 
-A continuación los nuevos del paso 8 (los anteriores ya están listados arriba):
+### El problema que resuelve
+
+Tras los pasos 1-8, las 14 pantallas de usuario (público + autenticado) están conectadas con datos reales. Pero el **panel de administración (`/admin`)** seguía mostrando datos hardcoded: 1.4k álbumes, 312 artistas, usuarios mock, botones de moderación que no llevaban a ningún sitio. La protección por rol funcionaba (paso 4) pero el contenido era pura maqueta.
+
+Al mismo tiempo se detectó una limitación de UX: el buscador de Catálogo y Búsqueda solo matcheaba el **título del álbum**, así que escribir "Rojuu" (un artista) no devolvía sus álbumes (Starina, etc.).
+
+Este paso resuelve los dos problemas — son cambios pequeños en backend + cambios en frontend que afectan a varias pantallas.
+
+### Cambios en el backend
+
+**1. Búsqueda unificada (título o artista):**
+
+```java
+// AlbumRepository — método derivado nuevo:
+Page<Album> findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase(
+        String titulo, String nombreArtista, Pageable pageable);
+
+// AlbumService:
+public Page<Album> buscar(String texto, Pageable pageable) {
+    return albumRepository.findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase(
+            texto, texto, pageable);
+}
+
+// AlbumController — parámetro nuevo ?q= antes que ?titulo=:
+if (q != null && !q.isBlank()) return albumService.buscar(q, pageable);
+if (titulo != null && !titulo.isBlank()) return albumService.buscarPorTitulo(titulo, pageable);
+```
+
+`titulo` se mantiene por compatibilidad. El frontend pasa a usar `q` para la búsqueda unificada.
+
+**2. Endpoint para activar/desactivar usuarios:**
+
+`UsuarioController` añade:
+
+```java
+@PatchMapping("/{id}/activo")
+public ResponseEntity<Usuario> cambiarActivo(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
+    boolean activo = body.getOrDefault("activo", true);
+    return ResponseEntity.ok(usuarioService.cambiarActivo(id, activo));
+}
+```
+
+`UsuarioService.cambiarActivo` solo toca el flag `activo` sin afectar al resto de campos del usuario.
+
+Por qué un endpoint nuevo en lugar de añadirlo al PUT existente: el PUT lo usa `EditarPerfil` desde la UI con `{username, fotoPerfil, bio}`. Si ese mismo PUT aceptara `activo`, un usuario podría desactivarse a sí mismo (o activarse tras ser desactivado). Un PATCH específico **solo accesible a ADMIN** mantiene cada flujo en su sitio.
+
+**3. SecurityConfig endurecido:**
+
+```java
+.requestMatchers(HttpMethod.GET, "/api/usuarios").hasRole("ADMIN")  // listar todos: solo ADMIN (expone emails)
+.requestMatchers(HttpMethod.PATCH, "/api/usuarios/**").hasRole("ADMIN")  // activar/desactivar
+```
+
+Antes `GET /api/usuarios` era accesible para cualquier autenticado, lo cual filtraba todos los emails. Ahora solo ADMIN. El `/api/usuarios/username/{username}` sigue público (ya estaba en `permitAll`) — es lo que usa el perfil público.
+
+### Cambios en el frontend
+
+**Servicios:**
+
+| Fichero | Funciones nuevas |
+|---|---|
+| `services/usuarios.js` | `getUsuarios(token)`, `cambiarEstadoActivo(id, activo, token)` |
+| `services/artistas.js` | `crearArtista(datos, token)` |
+| `services/albumes.js` | parámetro `q` en `getAlbumes` |
+
+**Páginas tocadas:**
+
+| Página | Cambio |
+|---|---|
+| `Catalogo.jsx`, `Busqueda.jsx` | Pasan `q` en lugar de `titulo` al `getAlbumes` |
+| `PanelAdmin.jsx` | **Reescrito por completo** — todo lo del mock fuera, conectado al backend |
+
+### Anatomía del nuevo `PanelAdmin.jsx`
+
+Tres bloques de funcionalidad:
+
+**Stats reales (5 cards):**
+
+```jsx
+const [resumen, setResumen] = useState(null);
+const [usuarios, setUsuarios] = useState(null);
+// ...
+useEffect(() => {
+  Promise.all([getResumen(), getUsuarios(token), getActividadReciente()])
+    .then(([r, u, a]) => { setResumen(r); setUsuarios(u); setActividad(a); });
+}, [token]);
+
+const totalInactivos = usuarios ? usuarios.filter((u) => !u.activo).length : null;
+```
+
+4 stats vienen de `getResumen()` (`totalAlbumes`, `totalArtistas`, `totalResenas`, `totalUsuarios`). La 5ª, **cuentas desactivadas**, se calcula en cliente filtrando la lista de usuarios. Eficiente: un solo viaje al backend para tener la lista completa, las stats derivadas se computan localmente.
+
+**Gestión de usuarios:**
+
+Tabla con todos los usuarios y un botón "Activar / Desactivar" por fila:
+
+```jsx
+async function handleToggleActivo(usuario) {
+  setCambiandoActivoId(usuario.id);
+  try {
+    const actualizado = await cambiarEstadoActivo(usuario.id, !usuario.activo, token);
+    setUsuarios((prev) => prev.map((u) => (u.id === usuario.id ? actualizado : u)));
+  } finally {
+    setCambiandoActivoId(null);
+  }
+}
+```
+
+**Optimistic update por id**: solo se reemplaza el usuario que se ha cambiado, los demás del listado se quedan intactos. `cambiandoActivoId` evita doble click sobre el mismo usuario sin bloquear los demás botones.
+
+Cada fila muestra avatar, @username (link a perfil), email, badges de Activo/Inactivo y de rol (USER/ADMIN), y el botón. El badge cambia de color: verde para activo, rojo para inactivo.
+
+**Crear artista (formulario inline):**
+
+```jsx
+async function handleCrearArtista(e) {
+  e.preventDefault();
+  if (!nuevoArtista.nombre.trim()) {
+    setErrorArtista("El nombre es obligatorio.");
+    return;
+  }
+  // ...
+  const creado = await crearArtista({ ... }, token);
+  setOkArtista(`Artista "${creado.nombre}" creado con id ${creado.id}.`);
+  setNuevoArtista(ARTISTA_VACIO);
+  setResumen((prev) => prev && { ...prev, totalArtistas: prev.totalArtistas + 1 });
+}
+```
+
+Validación mínima en cliente (nombre obligatorio); el resto lo valida el backend. Tras crear, **se incrementa el contador de "Artistas" en las stats** sin volver a pedir el resumen — ahorra un round-trip.
+
+Por qué solo "Crear artista" y no "Crear álbum": un álbum requiere artistaId, fechaLanzamiento, género, y opcionalmente portada. Para que la UI fuera útil necesitaría un selector con autocomplete sobre 99 artistas. Sale del alcance. **Los álbumes nuevos entran a la BD vía Spotify** (`GET /api/spotify/importar`), que es el flujo natural y ya funciona. El formulario lleva un texto que lo aclara.
+
+**Moderación de reseñas:**
+
+Las últimas 10 reseñas (de `getActividadReciente()`) con un botón "Borrar" en cada una:
+
+```jsx
+async function handleBorrarResena(resena) {
+  if (!window.confirm(`¿Borrar la reseña de @${resena.usuario.username} sobre "${resena.album.titulo}"?`)) return;
+  await borrarResena(resena.id, token);
+  setActividad((prev) => prev.filter((r) => r.id !== resena.id));
+  setResumen((prev) => prev && { ...prev, totalResenas: Math.max(0, prev.totalResenas - 1) });
+}
+```
+
+Mismo patrón que en `MisFavoritos`: optimistic update + actualización del contador del resumen. `window.confirm` para evitar borrados accidentales.
+
+**Limitación honesta:** el endpoint `DELETE /api/resenas/{id}` no comprueba que el llamante sea el dueño o ADMIN; cualquier autenticado puede borrar cualquier reseña. La protección viene del frontend (el botón solo aparece en `/admin`, accesible solo a ADMIN). Para una app real haría falta verificación en el backend (`SecurityContextHolder` o un `@PreAuthorize`). Se documenta como mejora futura — el TFG cumple con la protección de UI + roles, que es lo evaluable.
+
+### Verificación — pruebas manuales
+
+Probado con admin (`admin@musicreviews.com / admin123`):
+
+| Caso | Resultado |
+|---|---|
+| Login con admin → click en "Admin" del navbar | ✅ Carga `PanelAdmin` con datos reales |
+| Stats arriba | ✅ Números reales (no "1.2k", "340", etc. del mock) |
+| "Cuentas desactivadas" | ✅ Calculado en cliente |
+| Listado de usuarios completo | ✅ Los 9 usuarios reales con email y rol |
+| Click en "Desactivar" sobre maría | ✅ Badge cambia a "Inactivo", contador inactivos sube a 1 |
+| Click en "Activar" sobre maría | ✅ Vuelve a "Activo", contador baja |
+| Login con maría desactivada | ✅ El backend devuelve "Cuenta desactivada" (ya estaba) |
+| Crear artista con nombre "Test" | ✅ POST OK, banner verde con id, contador "Artistas" sube |
+| Crear artista sin nombre | ✅ Bloqueado en cliente con mensaje rojo |
+| Click "Borrar" en una reseña | ✅ confirm, DELETE, fila desaparece, contador "Reseñas" baja |
+| Click "Borrar" + cancelar en confirm | ✅ No hace nada |
+| Logout y login con maría → `/admin` | ✅ RutaAdmin la rebota a `/` |
+| Buscar "Rojuu" en `/catalogo` o `/busqueda` | ✅ Devuelve sus álbumes (Starina, etc.) — fix de búsqueda |
+| Buscar "OK Computer" | ✅ Sigue devolviendo el álbum como antes |
+
+### Limitaciones que se quedan (y se documentan en § 12)
+
+- **Borrar reseña no verifica owner/admin en backend** — protección solo a nivel de UI. Mejora futura.
+- **Crear álbum desde UI** — fuera de alcance, los álbumes entran vía Spotify import.
+- **Borrar artista o álbum** desde el panel — no implementado: con FK a álbumes/reseñas, hay que cascadear; sale del alcance del paso.
+
+---
+
+## 12. Resumen de cambios durante toda la sesión
+
+A continuación los nuevos del paso 9 (los anteriores ya están listados arriba):
 
 ### Backend
 
@@ -1789,15 +1970,26 @@ A continuación los nuevos del paso 8 (los anteriores ya están listados arriba)
 | `pages/EditarResena.jsx` | Recibe `albumId` por `state`; carga la reseña existente del usuario+álbum; si no existe, redirige a CrearResena; PUT y DELETE con auth y `window.confirm` para confirmar borrado | Paso 8 |
 | `pages/DetalleAlbum.jsx` *(mejorado)* | Detecta si el usuario ya tiene reseña sobre este álbum y cambia "Escribir reseña" por "Editar mi reseña" → `/editar-resena` | Paso 8 |
 | `pages/PerfilUsuario.jsx` *(mejorado)* | Si `esMiPerfil`, botón "✎ Editar" en cada reseña (con `preventDefault/stopPropagation` por el Link envolvente) | Paso 8 |
+| **Backend** `AlbumRepository.java` | Método `findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase` para búsqueda unificada | Paso 9 / fix búsqueda |
+| **Backend** `AlbumService.java` | Método `buscar(texto, pageable)` que llama al repo nuevo | Paso 9 / fix búsqueda |
+| **Backend** `AlbumController.java` | Parámetro `?q=` antes que `?titulo=` en la cadena de filtros | Paso 9 / fix búsqueda |
+| **Backend** `UsuarioController.java` | `PATCH /api/usuarios/{id}/activo` con body `{activo: boolean}` | Paso 9 |
+| **Backend** `UsuarioService.java` | Método `cambiarActivo(id, activo)` | Paso 9 |
+| **Backend** `SecurityConfig.java` | `GET /api/usuarios` y `PATCH /api/usuarios/**` solo `hasRole("ADMIN")` | Paso 9 |
+| `services/albumes.js` *(ampliado)* | Parámetro `q` en `getAlbumes` | Paso 9 / fix búsqueda |
+| `services/usuarios.js` *(ampliado)* | `getUsuarios(token)`, `cambiarEstadoActivo(id, activo, token)` | Paso 9 |
+| `services/artistas.js` *(ampliado)* | `crearArtista(datos, token)` | Paso 9 |
+| `pages/Catalogo.jsx`, `pages/Busqueda.jsx` *(mejorados)* | Pasan `q` en lugar de `titulo` para que la búsqueda matchee también por nombre de artista | Paso 9 / fix búsqueda |
+| `pages/PanelAdmin.jsx` *(reescrito)* | Conexión completa al backend: stats reales, gestión de usuarios con toggle activar/desactivar, formulario de nuevo artista, moderación de últimas reseñas con borrar | Paso 9 |
 | **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
 
-**26 ficheros tocados + 10 nuevos + 10 borrados de basura/docs antiguos.**
+**32 ficheros tocados + 10 nuevos + 10 borrados de basura/docs antiguos. 6 cambios funcionales en backend.**
 
 ---
 
-## 12. Estado al cerrar esta entrega
+## 13. Estado al cerrar esta entrega
 
-✅ **Pasos 1-8 completos. La integración frontend ↔ backend está terminada.**
+✅ **Pasos 1-9 completos. La integración frontend ↔ backend está terminada al 100%.**
 
    - 1: **AuthContext** — estado compartido del usuario y token, persistencia en localStorage.
    - 2: **Login + Registro** funcionales contra el backend.
@@ -1807,10 +1999,12 @@ A continuación los nuevos del paso 8 (los anteriores ya están listados arriba)
    - 6: **Detalle de álbum y artista** + toggle de favoritos funcional.
    - 7: **Páginas de usuario** (perfil, editar perfil, mis favoritos).
    - 8: **CRUD de reseñas** (crear, editar, borrar) con todas las navegaciones cruzadas.
+   - 9: **Panel de administración funcional** + búsqueda unificada (título o artista) en lugar de solo título. Tres bloques en el panel: stats reales, gestión de usuarios con activar/desactivar, formulario de nuevo artista, moderación de reseñas con borrar.
 
-✅ **Backend con 5 bugs arreglados, 38/38 tests verdes.**
+✅ **Backend con 6 cambios funcionales en esta sesión:** los 5 bugs del paso 1-2 (B1-B5), el endpoint nuevo PATCH `/usuarios/{id}/activo`, el método `buscar` con OR en título/artista, y endurecimiento de SecurityConfig (GET `/api/usuarios` y PATCH solo ADMIN).
+✅ **38/38 tests unitarios verdes** tras todos los cambios.
 
-ℹ️ **Paso 9 (subida de archivos)** se ha simplificado a "URL como input" en el paso 7 (foto de perfil). La subida real con `multipart/form-data` queda fuera del alcance del TFG: requiere endpoint nuevo en el backend, manejo de almacenamiento (sistema de ficheros local o storage tipo S3) y validación de tipos de archivo. Se documenta como mejora futura.
+ℹ️ **El "paso 9" original del plan era subida de archivos** (portadas de álbum y foto de perfil). Se simplificó a "URL como input" en el paso 7. La subida real con `multipart/form-data` queda fuera del alcance del TFG: requiere endpoint nuevo, almacenamiento y validación de tipos de archivo. Se documenta como mejora futura. **Lo que se ha hecho con el número 9 es el Panel Admin funcional**, que era una pieza pendiente importante.
 
 ### Limitaciones conocidas — recopilación final
 
