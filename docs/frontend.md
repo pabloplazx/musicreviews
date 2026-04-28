@@ -515,15 +515,39 @@ Las tres páginas relacionadas con el usuario conectadas con el backend.
 
 **12 casos del CRUD completo verificados manualmente.**
 
-### Estado final de la fase 4
+### Estado final de la fase 4 (tras paso 8)
 
 ✅ **Integración completa frontend ↔ backend.** Las 15 pantallas tienen contenido real, navegación coherente y manejo de errores.
 
 ℹ️ **Paso 9 (subida de archivos)** simplificado a "URL como input" en el paso 7. La subida real queda como mejora futura.
 
-**Limitaciones conocidas documentadas en `integracion.md` § 12** (sin verificación de email, sin cambio password, sin desactivar cuenta, etc. — todas tienen justificación honesta y son limitaciones del backend o decisiones de alcance).
-
 Detalle completo: [`integracion.md` § 10](integracion.md).
+
+### Sesión 8 (28/04/2026) — paso 9 reformulado: panel admin funcional + fix búsqueda
+
+El "paso 9" original del plan (subida de archivos) ya se simplificó a URL en paso 7. Lo que se hace ahora con ese número es **el panel de administración funcional** y un **fix puntual de búsqueda** que mejoraban la integración.
+
+**Backend (6 cambios):**
+
+- `AlbumRepository`: método `findByTituloContainingIgnoreCaseOrArtistaNombreContainingIgnoreCase`.
+- `AlbumService.buscar(texto, pageable)` y `AlbumController` con parámetro `?q=`.
+- `UsuarioController`: `PATCH /api/usuarios/{id}/activo` con body `{activo: boolean}`.
+- `UsuarioService.cambiarActivo(id, activo)`.
+- `SecurityConfig`: `GET /api/usuarios` y `PATCH /api/usuarios/**` solo ADMIN (antes `GET` exponía todos los emails a cualquier autenticado).
+
+**Frontend:**
+
+- `services/usuarios.js` ampliado con `getUsuarios` y `cambiarEstadoActivo`.
+- `services/artistas.js` ampliado con `crearArtista`.
+- `services/albumes.js` ampliado con parámetro `q`.
+- `Catalogo.jsx` y `Busqueda.jsx` pasan `q` en lugar de `titulo`.
+- `PanelAdmin.jsx` reescrito por completo: stats reales, gestión de usuarios con toggle activar/desactivar, formulario de nuevo artista, moderación de reseñas con borrar.
+
+**Limitación honesta:** el endpoint `DELETE /api/resenas/{id}` no verifica owner/admin en backend. Protección solo a nivel de UI. Mejora futura.
+
+**13 casos verificados manualmente. 38/38 tests verdes.**
+
+Detalle completo: [`integracion.md` § 11](integracion.md).
 
 ### Decisiones técnicas
 
