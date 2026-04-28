@@ -401,6 +401,18 @@ Lo abordado:
 - **38 tests unitarios** verdes tras los arreglos.
 - **6 lotes de pruebas Postman** cubriendo login + CRUD reseñas + CRUD favoritos + casos de error.
 
+### Sesión 2 (28/04/2026) — paso 3: Navbar dinámico
+
+Solo se tocó `src/components/layout/Navbar.jsx`. Es el primer sitio fuera de los formularios de auth donde se consume el contexto.
+
+- `useAuth()` da `usuario` y `logout`.
+- Renderizado condicional con un ternario sobre `usuario`: sin sesión muestra botones "Entrar"/"Registrarse"; con sesión muestra ♥ favoritos, avatar con la inicial real del username, botón "Salir" y, si `rol === "ADMIN"`, un link al panel admin.
+- Logout = `logout()` + `navigate("/")` para no dejar al usuario en una página privada con datos cacheados.
+- Logo del navbar ahora enlaza a `/` (antes no era clicable).
+- `aria-label` en iconos sin texto (accesibilidad).
+
+Detalle completo y motivación de cada decisión: [`integracion.md` § 4](integracion.md).
+
 ### Decisiones técnicas
 
 | Decisión | Razón |

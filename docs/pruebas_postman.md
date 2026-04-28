@@ -485,7 +485,69 @@ Mockito lo inyecta automáticamente en `ResenaService` por tipo. El test no nece
 
 **Verificación:** `./mvnw test` pasa los 38 tests sin errores.
 
-### Tabla resumen de los bugs B1–B5
+### Bug B6 — `FormInput` (frontend) descartaba `value` y `onChange` silenciosamente
+
+**Aunque este bug es del frontend, lo recogemos aquí para que la lista de bugs de la fase 4 esté completa.**
+
+**Síntoma:** desde el navegador (`localhost:5173`), tras hacer login con credenciales correctas (`maria@musicreviews.com` / `maria123`) el backend respondía sistemáticamente **400 "Email o contraseña incorrectos"**. Las mismas credenciales funcionaban perfectamente desde Postman y desde curl.
+
+**Diagnóstico:** mirar **F12 → Network → Payload** del request fallido. El body real que el navegador enviaba era:
+
+```json
+{"email":"","password":""}
+```
+
+— strings vacíos, aunque visualmente el formulario tenía las letras escritas.
+
+**Causa raíz:** el componente `FormInput.jsx` tenía esta firma:
+
+```jsx
+export default function FormInput({ label, type, placeholder, id, error }) {
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      <input id={id} type={type} placeholder={placeholder} className="..." />
+    </div>
+  );
+}
+```
+
+No declaraba `value` ni `onChange` como props y tampoco los pasaba al `<input>`. Pero `Login.jsx` y `Registro.jsx` los usaban:
+
+```jsx
+<FormInput value={email} onChange={e => setEmail(e.target.value)} ... />
+```
+
+Esos props se descartaban silenciosamente. El `<input>` real no era controlado por React. El usuario tecleaba, las letras aparecían en el DOM, pero el estado `email` en `Login.jsx` seguía siendo `""`. Submit → `login("", "")` → 400.
+
+El bug pasaba desapercibido al ver la maquetación: las letras aparecen, los validadores HTML5 funcionan, todo se ve bien. Solo se manifestaba al hacer un submit real.
+
+**Solución:** que `FormInput` propague al `<input>` cualquier prop estándar mediante el operador rest:
+
+```jsx
+export default function FormInput({ label, type = "text", placeholder, id, error = false, ...rest }) {
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type={type}
+        placeholder={placeholder}
+        className="..."
+        {...rest}
+      />
+    </div>
+  );
+}
+```
+
+Esto incluye automáticamente `value` y `onChange` cuando los pasen, pero también `name`, `autoComplete`, `required`, etc. Es la convención estándar para componentes que envuelven elementos HTML.
+
+**Verificación:** tras el fix, recargar el navegador (HMR de Vite ya había aplicado el cambio) y probar el login: maría entró a la primera y el navbar reaccionó al estado de sesión.
+
+**Detalle completo y reflexión:** [`integracion.md` § 5](integracion.md).
+
+### Tabla resumen de los bugs B1–B6
 
 | Bug | Recurso afectado | Síntoma | Causa raíz | Fix |
 |---|---|---|---|---|
@@ -494,6 +556,7 @@ Mockito lo inyecta automáticamente en `ResenaService` por tipo. El test no nece
 | **B3** | `ResenaService.actualizar` | `PUT /api/resenas/{id}` devolvía siempre los valores **antiguos** | `entityManager.refresh()` antes del flush sobrescribía los cambios en memoria con los datos antiguos de BD. | Quitar `refresh()` en `actualizar`. El dirty checking ya genera el UPDATE al commit. |
 | **B4** | `AuthController` | Login con password mal devolvía 401 + `text/plain`. El frontend petaba al hacer `res.json()`. | `AuthController` devolvía `ResponseEntity.status(401).body("...")` con texto plano en vez de delegar en el `GlobalExceptionHandler`. | Lanzar `ReglaNegocioException` desde `AuthController.login`. Cambia el código a 400 pero ahora devuelve JSON uniforme. |
 | **B5** | `ResenaServiceTest` | El test `crear_conDatosValidos_guardaYDevuelveResena` reventaba con `NullPointerException: this.entityManager is null` | Se había inyectado `EntityManager` en `ResenaService` pero el test no se actualizó con un `@Mock`. | Añadir `@Mock private EntityManager entityManager;` en el test. |
+| **B6** *(frontend)* | `FormInput.jsx` | Login desde el navegador siempre devolvía 400 "Email o contraseña incorrectos" aunque las credenciales fueran correctas; en Network → Payload el body era `{"email":"","password":""}`. | El componente no declaraba ni propagaba `value`/`onChange` al `<input>`, así que los formularios no eran controlados por React: el estado `email` y `password` en `Login.jsx` seguían a `""`. | Aceptar `...rest` en `FormInput` y propagarlo al `<input>` con `{...rest}`. |
 
 ### Lo que se aprendió
 
