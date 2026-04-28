@@ -9,8 +9,8 @@ Los usuarios pueden buscar álbumes, escribir reseñas con puntuación del 1 al 
 
 | Capa | Tecnología |
 |---|---|
-| Backend | Java 21 + Spring Boot + Maven + Spring Security + JWT |
-| Frontend | React + Vite (en desarrollo) |
+| Backend | Java 21 + Spring Boot 4.0.5 + Maven + Spring Security 7 + JWT |
+| Frontend | React 19 + Vite 6 + Tailwind CSS 4 + React Router 7 — [`musicreviews-frontend`](https://github.com/pabloplazx/musicreviews-frontend) (repo separado) |
 | Base de datos | MySQL en la nube — [Aiven](https://aiven.io) (plan gratuito permanente) |
 
 ---
@@ -43,13 +43,18 @@ MusicReviews_TFG/
     ├── diagrama_bd_nuevo.png
     ├── diagrama_clases.png
     ├── diagrama_casos_uso.png
-    ├── tests_unitarios.md        ← Documentación completa de los 38 tests unitarios
-    ├── pruebas_postman.md        ← Registro de pruebas y bugs resueltos
-    ├── migracion_aiven.md        ← Proceso de migración de BD local a Aiven (MySQL cloud)
+    ├── diario_bitacora.md         ← Bitácora semanal de todo el desarrollo (fases 1-4)
+    ├── tests_unitarios.md         ← Documentación completa de los 38 tests unitarios
+    ├── pruebas_postman.md         ← Pruebas Postman, bugs encontrados y resueltos (incl. B1-B5 de fase 4)
+    ├── migracion_aiven.md         ← Proceso de migración de BD local a Aiven (MySQL cloud)
     ├── seguridad_autenticacion.md ← JWT, BCrypt, CORS y protección de contraseñas
     ├── refactorizacion_backend.md ← Optimizaciones y refactorizaciones del backend
-    ├── importacion/              ← Scripts y documentación del proceso de importación desde Spotify
-    └── referencias/              ← Enlaces e inspiración para el diseño del frontend
+    ├── frontend.md                ← Proceso de desarrollo del frontend (fases 3 y 4)
+    ├── integracion.md             ← Fase 4: integración frontend ↔ backend, AuthContext, bugs B1-B5
+    ├── tailwind-guide.md          ← Guía de clases Tailwind utilizadas en el frontend
+    ├── diseño/                    ← Capturas Figma y especificación del design system
+    ├── importacion/               ← Scripts y documentación del proceso de importación desde Spotify
+    └── referencias/               ← Enlaces e inspiración para el diseño del frontend
 ```
 
 ---
@@ -147,11 +152,22 @@ Todos los endpoints devuelven errores en formato JSON uniforme gracias al `Globa
 ## Documentación
 
 - **API REST completa:** `backend/backend/src/main/java/com/musicreviews/backend/README.md`
+- **Bitácora semanal:** `docs/diario_bitacora.md`
 - **Tests unitarios:** `docs/tests_unitarios.md`
 - **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
+- **Frontend (proceso, decisiones de diseño):** `docs/frontend.md`
+- **Integración frontend ↔ backend (fase 4):** `docs/integracion.md`
+- **Guía de clases Tailwind:** `docs/tailwind-guide.md`
 - **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
 - **Migración de la BD a Aiven:** `docs/migracion_aiven.md`
 - **Seguridad y autenticación JWT:** `docs/seguridad_autenticacion.md`
 - **Refactorización y optimización del backend:** `docs/refactorizacion_backend.md`
 - **Referencias de diseño:** `docs/referencias/referencias.md`
 - **Diagramas:** carpeta `docs/`
+
+---
+
+## Estado del proyecto
+
+- **Backend:** completado y desplegable. 38/38 tests verdes. API REST funcional con JWT, integración Spotify y Last.fm. Ver `docs/diario_bitacora.md` para el historial.
+- **Frontend:** 15 pantallas implementadas (repo `musicreviews-frontend`). Fase 4 (integración con backend) en curso — pasos 1 y 2 completos (AuthContext + Login/Registro funcionales). Ver `docs/integracion.md`.
