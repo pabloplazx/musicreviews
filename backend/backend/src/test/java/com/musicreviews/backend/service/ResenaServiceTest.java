@@ -47,7 +47,7 @@ class ResenaServiceTest {
         resena.setId(1L);
         resena.setUsuario(usuario);
         resena.setAlbum(album);
-        resena.setPuntuacion(4);
+        resena.setPuntuacion(4.0);
         resena.setComentario("Muy buen álbum");
     }
 
@@ -62,27 +62,27 @@ class ResenaServiceTest {
         Resena resultado = resenaService.crear(resena);
 
         assertNotNull(resultado);
-        assertEquals(4, resultado.getPuntuacion());
+        assertEquals(4.0, resultado.getPuntuacion());
         verify(resenaRepository).save(resena);
     }
 
-    // Esto verifica que una puntuación de 0 lanza excepción.
+    // Esto verifica que una puntuación por debajo del mínimo lanza excepción.
     @Test
     void crear_conPuntuacionCero_lanzaExcepcion() {
-        resena.setPuntuacion(0);
+        resena.setPuntuacion(0.0);
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> resenaService.crear(resena));
-        assertEquals("La puntuación debe estar entre 1 y 5", ex.getMessage());
+        assertEquals("La puntuación debe estar entre 0.5 y 5", ex.getMessage());
         verify(resenaRepository, never()).save(any());
     }
 
-    // Esto verifica que una puntuación de 6 lanza excepción.
+    // Esto verifica que una puntuación por encima del máximo lanza excepción.
     @Test
     void crear_conPuntuacionSeis_lanzaExcepcion() {
-        resena.setPuntuacion(6);
+        resena.setPuntuacion(6.0);
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> resenaService.crear(resena));
-        assertEquals("La puntuación debe estar entre 1 y 5", ex.getMessage());
+        assertEquals("La puntuación debe estar entre 0.5 y 5", ex.getMessage());
         verify(resenaRepository, never()).save(any());
     }
 
@@ -102,7 +102,7 @@ class ResenaServiceTest {
     @Test
     void actualizar_conDatosValidos_actualizaYDevuelveResena() {
         Resena datosNuevos = new Resena();
-        datosNuevos.setPuntuacion(5);
+        datosNuevos.setPuntuacion(5.0);
         datosNuevos.setComentario("Obra maestra");
 
         when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
@@ -110,7 +110,7 @@ class ResenaServiceTest {
 
         Resena resultado = resenaService.actualizar(1L, datosNuevos);
 
-        assertEquals(5, resultado.getPuntuacion());
+        assertEquals(5.0, resultado.getPuntuacion());
         assertEquals("Obra maestra", resultado.getComentario());
     }
 
@@ -118,7 +118,7 @@ class ResenaServiceTest {
     @Test
     void actualizar_conPuntuacionInvalida_lanzaExcepcion() {
         Resena datosNuevos = new Resena();
-        datosNuevos.setPuntuacion(7);
+        datosNuevos.setPuntuacion(7.0);
 
         when(resenaRepository.findById(1L)).thenReturn(Optional.of(resena));
 
