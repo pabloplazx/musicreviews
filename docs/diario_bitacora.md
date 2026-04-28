@@ -866,3 +866,69 @@ No hay endpoint de promoción a propósito: sería un agujero de seguridad. La a
 🔜 Paso 5: Páginas públicas con datos reales. Catálogo, Búsqueda, Rankings, Detalle de álbum y de artista hoy usan datos mock dentro de cada componente. Hay que reemplazarlos por llamadas a `GET /api/albumes`, `/api/artistas`, `/api/estadisticas/*` y manejar estados de carga / error.
 
 Detalle completo en [`integracion.md` § 6](integracion.md).
+
+---
+
+## Semana 10 — Fase 4, sesión 4: páginas públicas con datos reales (28/04/2026)
+
+**Fase:** FASE 4 — paso 5 del plan.
+
+### Objetivo
+
+Reemplazar los datos mock de Inicio, Catálogo, Búsqueda y Rankings por datos reales del backend. Es la primera vez que el frontend consume datos de negocio que no son de auth.
+
+### Capa de servicios — separación por dominio
+
+Tres servicios nuevos, uno por dominio del backend:
+
+| Fichero | Funciones | Endpoints |
+|---|---|---|
+| `services/albumes.js` | `getAlbumes(params)`, `getAlbum(id)` | `GET /api/albumes`, `GET /api/albumes/{id}` |
+| `services/artistas.js` | `getArtistas`, `getArtista(id)` | `GET /api/artistas`, `GET /api/artistas/{id}` |
+| `services/estadisticas.js` | 8 funciones | `GET /api/estadisticas/*` |
+
+Construyen query strings con `URLSearchParams` (codificación correcta de tildes y caracteres especiales) y lanzan `Error` con mensaje legible si la respuesta no es 2xx.
+
+### Patrón de fetching
+
+`useState` + `useEffect` + `fetch` nativo. **Sin librería externa** (nada de React Query, SWR, Axios). Tres estados: cargando / error / datos. `Promise.all` para peticiones paralelas en páginas con varias.
+
+### Cambios por página
+
+**Inicio (`/`):**
+- Hero rediseñado: el mock estático "DAMN. — Kendrick Lamar — 2017" se ha reemplazado por la **mejor reseña reciente real** (sort por puntuación desc, primera). Card clicable a `/album/:id`.
+- "Reseñas recientes": 4 `ResenaCard` reales, ahora todas clicables (`ResenaCard` actualizada para ser `<Link>`).
+- "Top Álbumes": 5 `AlbumCard` reales con portadas de Spotify y rating.
+
+**Catálogo (`/catalogo`):**
+- Paginación server-side: `Page<Album>` con `{content, page: {totalPages, totalElements}}`.
+- Géneros dinámicos: top 8 con más álbumes (de los 36 que hay en BD).
+- Búsqueda con **debounce de 300 ms** (`setTimeout` + `clearTimeout` en cleanup) para evitar spam de peticiones.
+- Solo orden "A → Z" porque el backend no acepta `sort` en el listado paginado. Las opciones del mock que no funcionaban se han retirado.
+- `CatalogoCard.jsx` hizo opcional el `rating` (`{rating != null && ...}`) porque el listado paginado del backend no incluye `puntuacionMedia`.
+
+**Búsqueda (`/busqueda`):**
+- Tendencias (4) + Añadidos recientemente (3) cargadas al montar.
+- Resultados de búsqueda con `getAlbumes({titulo})` + debounce 300 ms.
+- Chips "Álbumes/Artistas/Usuarios" se mantienen como decoración — el backend solo busca por título de álbum.
+
+**Rankings (`/rankings`):**
+- 5 peticiones en paralelo con `Promise.all`: resumen, top-albumes, top-artistas, generos, actividad-reciente.
+- Stats con números reales (732, 99, 39, 9) en lugar de los formateados a "1.2k" del mock.
+- Top Álbumes, Top Artistas y Actividad reciente todas con links a sus respectivas páginas.
+
+### Limitaciones conocidas que afloraron
+
+- **El listado paginado de álbumes no incluye `puntuacionMedia`** — el catálogo no muestra estrellas. Para tenerlo hace falta añadir el campo computado al modelo o un endpoint dedicado.
+- **El backend no acepta `sort` en `GET /api/albumes`** — el frontend solo ofrece "A → Z".
+- **La búsqueda solo busca por título de álbum** — buscar artistas o usuarios requiere endpoints nuevos.
+- **Géneros del backend no normalizados** ("Rock" y "rock", "hip-hop" y "Hip-Hop"). Se usa `capitalize` en CSS.
+
+### Verificación manual
+
+12 casos probados con `npm run dev` (frontend) + backend Spring Boot. Detalle en [`integracion.md` § 7](integracion.md).
+
+### Estado al cerrar la sesión
+
+✅ Pasos 1-5 completos. Las 4 páginas públicas con datos reales del backend.
+🔜 Paso 6: Detalle de álbum y artista. `/album/:id` y `/artista/:id` siguen mock; conectar con `getAlbum(id)`, listar reseñas reales del álbum, mostrar discografía del artista.

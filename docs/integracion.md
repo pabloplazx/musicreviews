@@ -1062,7 +1062,184 @@ Tras esto, login con `admin@musicreviews.com / admin123` da `rol: ADMIN` en la r
 
 ---
 
-## 7. Resumen de cambios durante esta sesión
+## 7. Paso 5 — Páginas públicas con datos reales
+
+### El problema que resuelve
+
+Hasta el paso 4 las cuatro páginas públicas (Inicio, Catálogo, Búsqueda, Rankings) seguían mostrando **datos mock** definidos en arrays dentro de cada componente. La protección de rutas y el navbar dinámico ya funcionaban, pero al entrar a `/catalogo` se veían siempre los mismos 10 álbumes hardcoded. Para que la app sea útil hay que conectar esas páginas con el backend.
+
+### Capa de servicios — separación por dominio
+
+Antes solo existía `services/auth.js`. Para el paso 5 se han creado tres servicios nuevos, uno por dominio del backend:
+
+| Fichero | Responsabilidad | Endpoints |
+|---|---|---|
+| `services/albumes.js` | Listado paginado de álbumes y detalle | `GET /api/albumes`, `GET /api/albumes/{id}` |
+| `services/artistas.js` | Listado de artistas y detalle | `GET /api/artistas`, `GET /api/artistas/{id}` |
+| `services/estadisticas.js` | Resumen, rankings, géneros, actividad | `GET /api/estadisticas/*` (8 funciones) |
+
+**Por qué un fichero por dominio en lugar de un único `api.js`:**
+
+- Coincide con la estructura del backend (un controller por dominio).
+- Si se añade un dominio nuevo se crea su fichero, sin tocar los existentes.
+- Cada fichero queda corto (10–30 líneas) y se entiende de un vistazo.
+- En cualquier librería profesional (axios + tanstack query, RTK Query) se hace así.
+
+Patrón común a los tres:
+
+```js
+const API = "http://localhost:8080/api";
+
+export async function getAlbumes({ page = 0, size = 12, titulo, genero } = {}) {
+  const params = new URLSearchParams();
+  params.set("page", page);
+  params.set("size", size);
+  if (titulo) params.set("titulo", titulo);
+  if (genero) params.set("genero", genero);
+
+  const res = await fetch(`${API}/albumes?${params}`);
+  if (!res.ok) throw new Error(`Error al cargar álbumes (HTTP ${res.status})`);
+  return res.json();
+}
+```
+
+Detalles a notar:
+
+- **`URLSearchParams`** construye query strings escapando bien cualquier carácter especial. Si el usuario busca `Beyoncé` o `4:44`, esto codifica los caracteres correctamente. Manualmente con `+ "&titulo=" + texto` se rompe rápido.
+- **Argumentos opcionales con `= {}` y default values** — permite llamar `getAlbumes()` sin parámetros (toma defaults) o `getAlbumes({page: 2, titulo: "rad"})` con los que necesite.
+- **`if (!res.ok) throw`** — mismo patrón que `auth.js` para que el componente que llama use `try/catch` o `.catch()` idiomático.
+
+### Patrón de fetching en las páginas
+
+Sin librería externa (nada de React Query, SWR, Axios). Solo `useState` + `useEffect` + `fetch` nativo. Es lo correcto para un TFG y lo que se evalúa.
+
+Pattern estándar usado en las cuatro páginas:
+
+```jsx
+const [datos, setDatos] = useState(null);
+const [error, setError] = useState(null);
+
+useEffect(() => {
+  servicio.get()
+    .then(setDatos)
+    .catch(err => setError(err.message));
+}, []);
+
+return (
+  <>
+    {error && <p>Error: {error}</p>}
+    {!error && !datos && <p>Cargando…</p>}
+    {datos && datos.length === 0 && <p>Sin resultados</p>}
+    {datos && datos.length > 0 && <Grid items={datos} />}
+  </>
+);
+```
+
+Tres estados, tres bloques de render condicional. Es el "tri-state" estándar de React: cargando / error / datos. Cubrirlos todos hace que la UI nunca quede en blanco ni explote.
+
+**`Promise.all` para peticiones paralelas:** cuando una página necesita varias peticiones independientes (Inicio: actividad reciente + top álbumes; Rankings: 5 endpoints), se lanzan **en paralelo** con `Promise.all`. Si fueran secuenciales (`await fetch1(); await fetch2()`) la página tardaría el doble. Con `Promise.all` tarda lo que la más lenta.
+
+```jsx
+useEffect(() => {
+  Promise.all([getActividadReciente(), getTopAlbumes()])
+    .then(([r, t]) => {
+      setResenas(r);
+      setTopAlbumes(t);
+    })
+    .catch(err => setError(err.message));
+}, []);
+```
+
+### Página por página
+
+#### Inicio (`/`)
+
+- **Hero**: el card de la derecha que mostraba "DAMN. — Kendrick Lamar — 2017" hardcoded ahora muestra **la mejor reseña reciente del backend**. La derivación es sencilla: `[...resenas].sort((a,b) => b.puntuacion - a.puntuacion)[0]`. Es un `<Link>` clicable a `/album/:id`. Si no hay reseñas todavía, se muestra un placeholder con "Cargando…".
+- **Reseñas recientes**: 4 `ResenaCard` de `getActividadReciente()`. Se aprovechó para hacer `ResenaCard` clicable también (envuelto en `<Link>`).
+- **Top Álbumes**: 5 `AlbumCard` de `getTopAlbumes()` con su rating real.
+- **CTA** sigue estática (es un call to action de marketing).
+
+#### Catálogo (`/catalogo`)
+
+Es la página más compleja porque combina paginación, filtros y búsqueda.
+
+- **Géneros cargados dinámicamente** desde `getGeneros()`. El backend devuelve 36 géneros distintos (rock, pop, hip-hop, alternative rock, britpop, indie rock, etc.); se toman los **8 con más álbumes** + "Todos". Antes estaban hardcoded a `["Hip-Hop", "Rock", "Electronic", ...]` que ni coincidían con los géneros reales del backend.
+- **Paginación server-side**: el backend devuelve `Page<Album>` con `{content, page: {totalPages, totalElements, number, size}}`. La UI sigue usando `pagina` 1-based (más natural para mostrar al usuario), se convierte a 0-based en el fetch (`page - 1`).
+- **Búsqueda con debounce de 300 ms**: si se lanzara fetch en cada keystroke, escribir "radiohead" provocaría 9 peticiones. Con debounce solo se lanza la última cuando el usuario para de escribir 300 ms:
+
+  ```jsx
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      getAlbumes({ titulo: busqueda, ... }).then(...);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [busqueda, generoActivo, pagina]);
+  ```
+
+  El truco está en el `clearTimeout` del cleanup: cada vez que el efecto se vuelve a ejecutar (tecla nueva), cancela el timer anterior antes de programar el nuevo. Solo el último timer llega al final.
+- **Solo orden "A → Z"** porque el backend ordena por título ascendente por defecto y no acepta parámetro `sort`. Para añadir "Mejor valorados" o "Más recientes" hay que ampliar `AlbumController` con un `Sort` parameter (Spring Data Pageable lo soporta nativo). Queda como mejora futura. Las opciones que no funcionaban del mock se han retirado.
+- **Sin estrellas en las cards** del catálogo. El backend no devuelve `puntuacionMedia` en el listado paginado de álbumes (solo en `getTopAlbumes()` que es agregado). Para mostrarlo en el catálogo hay que añadir un campo computado al modelo `Album` o un endpoint dedicado. `CatalogoCard` se modificó para que `rating` sea opcional (`{rating != null && ...}`) y no rompa con `null.toFixed()`.
+
+#### Búsqueda (`/busqueda`)
+
+- **Tendencias** (4 cards): `getTopAlbumes()` truncado a 4.
+- **Añadidos recientemente** (3 filas): `getAlbumesRecientes()` truncado a 3.
+- **Resultados de búsqueda**: cuando el usuario escribe, debounce 300 ms y `getAlbumes({titulo})`. Si el array viene vacío, muestra el bloque "Sin resultados" con el término buscado.
+- **Chips "Todo / Álbumes / Artistas / Usuarios"** se mantienen como decoración visual. El backend solo soporta búsqueda por título de álbum en los endpoints públicos. Buscar artistas o usuarios requiere endpoints nuevos — fuera del paso 5.
+
+#### Rankings (`/rankings`)
+
+5 peticiones en paralelo con `Promise.all`:
+
+| Sección | Endpoint | Mapeo |
+|---|---|---|
+| 4 stat cards | `getResumen()` | `{totalAlbumes, totalArtistas, totalResenas, totalUsuarios}` directo |
+| Top Álbumes | `getTopAlbumes()` | Top 5, con portada real, link a `/album/:id` |
+| Por género | `getGeneros()` | Top 5 con barras de progreso proporcionales |
+| Top Artistas | `getTopArtistas()` | Top 3 con foto real, link a `/artista/:id` |
+| Actividad reciente | `getActividadReciente()` | Top 2 reseñas con username y comentario, link a `/perfil/:username` |
+
+Las stats antes mostraban "1.2k", "340", "8.4k" formateadas a la "k" mock. Ahora muestran los números reales (732, 99, 39, 9) — sin sufijo, más honesto y los valores reales todavía no llegan al millar.
+
+### Verificación — pruebas manuales
+
+Frontend en `:5173` + backend Spring Boot en `:8080`. Recarga del navegador con `Ctrl+F5` tras los cambios.
+
+| Página | Caso | Resultado |
+|---|---|---|
+| `/` | Hero muestra reseña real con portada de Spotify, no la portada placeholder de "DAMN." | ✅ |
+| `/` | "Reseñas recientes" muestra 4 cards reales, todas clicables a `/album/:id` | ✅ |
+| `/` | "Top Álbumes" muestra 5 cards con portadas y ratings reales | ✅ |
+| `/catalogo` | Cabecera muestra "732 álbumes" (total real) | ✅ |
+| `/catalogo` | Géneros del backend (hip-hop, Rock, alternative rock, britpop, indie rock, etc.) | ✅ |
+| `/catalogo` | Click en género → filtra y resetea a página 1 | ✅ |
+| `/catalogo` | Búsqueda "rad" tras 300 ms muestra Radiohead y similares | ✅ |
+| `/catalogo` | Paginación funciona, las flechas cargan la página siguiente del backend | ✅ |
+| `/busqueda` | Sin escribir: tendencias + recientes reales | ✅ |
+| `/busqueda` | Escribir "kendrick" tras 300 ms muestra resultados reales | ✅ |
+| `/rankings` | 4 stats con números reales, Top Álbumes/Artistas/Géneros/Actividad cargados | ✅ |
+| `/rankings` | Click en una fila de Top Álbumes lleva a `/album/:id` | ✅ |
+
+### Lo que NO está hecho aún (a propósito, queda para pasos 6-9)
+
+- `/album/:id` (Detalle de álbum) sigue con datos mock — paso 6.
+- `/artista/:id` (Detalle de artista) sigue con datos mock — paso 6.
+- `/perfil/:username` (Perfil) sigue con datos mock — paso 7.
+- `/editar-perfil`, `/favoritos` (Mis favoritos) sigue mock — paso 7.
+- `/crear-resena`, `/editar-resena` siguen mock — paso 8.
+- Toggle "Añadir a favoritos" en el detalle de álbum es solo estado local — paso 8 (POST con auth).
+- Subida de portadas/fotos perfil — paso 9 (probablemente reducido a "URL como input", la subida real con `multipart/form-data` requiere endpoint nuevo en el backend).
+
+### Limitaciones conocidas que afloraron
+
+- **El listado paginado de álbumes no incluye `puntuacionMedia`.** Para mostrar estrellas en el catálogo habría que añadir el campo computado al modelo o un endpoint dedicado. Mejora futura.
+- **El backend no acepta `sort` en `GET /api/albumes`.** El frontend solo ofrece "A → Z" en el selector. Spring Data Pageable lo soporta nativo, pero hay que cambiar el controller.
+- **La búsqueda solo busca por título de álbum.** Buscar artistas o usuarios requiere endpoints nuevos.
+- **Los géneros del backend no están normalizados** — hay "Rock" y "rock", "hip-hop" y "Hip-Hop". Se respeta lo que viene de Spotify pero estéticamente queda mejor con `capitalize` en CSS (ya aplicado en Rankings).
+
+---
+
+## 8. Resumen de cambios durante esta sesión
 
 ### Backend
 
@@ -1091,23 +1268,33 @@ Tras esto, login con `admin@musicreviews.com / admin123` da `rol: ADMIN` en la r
 | `components/routing/RutaAdmin.jsx` *(nuevo)* | Wrapper que exige `rol === "ADMIN"`. Sin sesión a `/login`, con sesión sin rol a `/` (evita bucle) | Paso 4 |
 | `App.jsx` | Reagrupar rutas en 3 bloques: públicas, protegidas (envueltas en `<RutaProtegida>`) y admin (envueltas en `<RutaAdmin>`) | Paso 4 |
 | `pages/Login.jsx` | Leer `location.state.from` y volver a esa URL tras login (con `replace`) | Paso 4 |
+| `services/albumes.js` *(nuevo)* | `getAlbumes(params)` con paginación + filtros, `getAlbum(id)` | Paso 5 |
+| `services/artistas.js` *(nuevo)* | `getArtistas`, `getArtista(id)` | Paso 5 |
+| `services/estadisticas.js` *(nuevo)* | 8 funciones: resumen, top-albumes, top-artistas, generos, actividad-reciente, albumes-recientes, mas-resenados, top-por-genero | Paso 5 |
+| `pages/Inicio.jsx` | Reseñas recientes y Top Álbumes desde el backend; Hero con reseña destacada (mejor valorada) en lugar de mock estático | Paso 5 |
+| `pages/Catalogo.jsx` | Paginación server-side, géneros dinámicos, búsqueda con debounce 300ms, solo orden A→Z (limitación del backend) | Paso 5 |
+| `pages/Busqueda.jsx` | Tendencias + recientes; búsqueda con debounce 300ms | Paso 5 |
+| `pages/Rankings.jsx` | 5 fetches en paralelo con `Promise.all`: stats, top álbumes, top artistas, géneros, actividad | Paso 5 |
+| `components/ui/CatalogoCard.jsx` | `rating` opcional (`{rating != null && ...}`) — el listado paginado del backend no devuelve puntuación | Paso 5 |
+| `components/ui/ResenaCard.jsx` | Convertido a `<Link to={`/album/${id}`}>` para que las reseñas sean clicables | Paso 5 |
 | **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
 
-**8 ficheros tocados + 2 nuevos + 10 borrados de basura/docs antiguos.**
+**14 ficheros tocados + 5 nuevos + 10 borrados de basura/docs antiguos.**
 
 ---
 
-## 8. Estado al cerrar esta entrega
+## 9. Estado al cerrar esta entrega
 
 ✅ **Paso 1 (AuthContext) completo.**
 ✅ **Paso 2 (Login + Registro funcionales contra el backend) completo** — incluye el fix de B6 (FormInput sin propagar `value`/`onChange`).
 ✅ **Paso 3 (Navbar dinámico) completo** — renderizado condicional sin/con sesión, logout funcional, avatar real, link Admin condicionado al rol.
-✅ **Paso 4 (Rutas protegidas) completo** — wrappers `<RutaProtegida>` y `<RutaAdmin>` con redirección a `/login` recordando la URL original (`location.state.from`) y vuelta a ella tras autenticar. 5 casos de prueba manuales verificados (sin sesión rebota, USER no entra a admin, ADMIN entra, rutas públicas siguen funcionando).
+✅ **Paso 4 (Rutas protegidas) completo** — wrappers `<RutaProtegida>` y `<RutaAdmin>` con redirección a `/login` recordando la URL original.
+✅ **Paso 5 (Páginas públicas con datos reales) completo** — Inicio, Catálogo, Búsqueda y Rankings consumen datos reales del backend. Capa de servicios separada por dominio. Catálogo con paginación server-side, géneros dinámicos y búsqueda con debounce de 300 ms. Hero rediseñado para mostrar la mejor reseña reciente en lugar del mock estático "DAMN.".
 ✅ **Backend con 5 bugs arreglados y todas las relaciones LAZY serializando correctamente.**
 ✅ **38/38 tests unitarios verdes.**
 ✅ **Postman documentado con flujo end-to-end del login + CRUD de reseñas y favoritos.**
 
-🔜 **Siguiente: paso 5 (Páginas públicas con datos reales).** Catálogo, Búsqueda, Rankings, Detalle de álbum y Detalle de artista hoy usan **datos mock** definidos en arrays dentro de cada componente. Hay que reemplazarlos por llamadas a los endpoints públicos del backend (`GET /api/albumes`, `/api/artistas`, `/api/estadisticas/*`) y manejar los estados de carga / error. Es la primera vez que el frontend va a consumir datos reales que no son de auth.
+🔜 **Siguiente: paso 6 (Páginas de álbum y artista con datos reales).** `/album/:id` y `/artista/:id` siguen mostrando mock. Hay que conectarlas con `GET /api/albumes/{id}` y `GET /api/artistas/{id}`, listar las reseñas reales del álbum, mostrar la discografía del artista (`GET /api/albumes?artistaId=`) y los `useParams` para leer el `:id` de la URL.
 
 ---
 
