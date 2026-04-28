@@ -16,7 +16,7 @@ Documentación del proceso de conectar el frontend React (puerto 5173) con el ba
 8. Reseñas — crear, editar, borrar desde la UI
 9. Portadas — gestión de imágenes de álbum y artista
 
-Este documento se irá ampliando paso a paso. Hoy se cubre el **paso 1 completo**, los **bugs del backend que destapó el paso 1**, y la base sobre la que se construirán los siguientes pasos.
+Este documento se irá ampliando paso a paso. La sesión 1 cubrió los **pasos 1 y 2** (AuthContext y formularios reales) y los **bugs del backend** que destapó la integración. La sesión 2 añade el **paso 3 (Navbar dinámico)** — primera vez que el contexto se usa fuera de los formularios de auth.
 
 ---
 
@@ -605,7 +605,233 @@ Como aprendizaje para el resto del TFG: **a partir del paso 3 las llamadas reale
 
 ---
 
-## 4. Resumen de cambios en el backend durante esta sesión
+## 4. Paso 3 — Navbar dinámico
+
+### El problema que resuelve
+
+Hasta ahora el navbar era estático: siempre mostraba "Entrar" y "Registrarse" y un avatar hardcoded con la letra "P" enlazado a `/perfil/pablo_music`. Daba igual si el usuario había hecho login o no, la barra se veía idéntica. Eso es incoherente:
+
+- Si estoy logueado, no tiene sentido que me siga ofreciendo "Entrar".
+- Si no estoy logueado, no debería ver el icono ♥ de favoritos (es una página privada) ni un avatar inventado.
+- No había botón de cerrar sesión, lo que hacía imposible salir desde la UI.
+
+El paso 3 es **el primer sitio fuera de los formularios de auth donde se consume el contexto**. Hasta ahora `AuthContext` solo se usaba en `Login.jsx` y `Registro.jsx` para escribir. Ahora el `Navbar` lo lee y reacciona.
+
+### Cómo lee el contexto
+
+```jsx
+import { useAuth } from "../../context/AuthContext";
+
+export default function Navbar() {
+  const { usuario, logout } = useAuth();
+  // ...
+}
+```
+
+`useAuth()` devuelve el objeto que el `<AuthContext.Provider>` puso en la "caja" desde `main.jsx`. Como `AuthProvider` envuelve a toda la app, **cualquier componente** puede llamar a `useAuth()` sin recibir nada por props. React además se encarga de re-renderizar el navbar automáticamente cuando `usuario` cambia (al hacer login o logout).
+
+### Renderizado condicional
+
+El navbar tiene dos variantes según haya o no sesión. Se implementa con un único operador ternario sobre `usuario`:
+
+```jsx
+{usuario ? (
+  <>
+    {/* Sesión activa: favoritos, avatar, salir */}
+  </>
+) : (
+  <>
+    {/* Sin sesión: entrar, registrarse */}
+  </>
+)}
+```
+
+Esto funciona porque `usuario` es `null` cuando no hay sesión (falsy) y un objeto cuando sí (truthy). Los `<>...</>` (Fragment) son necesarios porque cada rama tiene varios hermanos y el ternario solo puede devolver un nodo.
+
+| Elemento | Sin sesión | Con sesión |
+|---|---|---|
+| Logo, links Inicio / Explorar / Top Álbumes | ✅ | ✅ |
+| Buscador (icono lupa) | ✅ | ✅ |
+| Botones "Entrar" / "Registrarse" | ✅ | ❌ |
+| Icono ♥ Favoritos | ❌ | ✅ |
+| Avatar circular con inicial del usuario | ❌ | ✅ |
+| Botón "Salir" | ❌ | ✅ |
+| Link "Admin" | ❌ | Solo si `rol === "ADMIN"` |
+
+### El logout
+
+```jsx
+import { useNavigate } from "react-router-dom";
+
+const navigate = useNavigate();
+
+function handleLogout() {
+  logout();         // limpia estado React + localStorage (vía AuthContext)
+  navigate("/");    // lleva al home
+}
+```
+
+Dos cosas a destacar:
+
+1. **`navigate("/")` es importante.** Si el usuario hace logout estando en `/favoritos`, sin la redirección se quedaría en esa página viendo lo que tenía cacheado (o un error si la página exige sesión, lo veremos en el paso 4). Devolverlo al home es seguro y predecible.
+
+2. **`<button onClick={handleLogout}>` y NO `<Link>`.** Logout es una **acción**, no navegación. Usar `<Link>` confundiría al usuario y a los lectores de pantalla, que anuncian "enlace a..." cuando es un botón el que está activando algo.
+
+### El avatar dinámico
+
+Antes el navbar tenía:
+
+```jsx
+<Link to="/perfil/pablo_music">
+  <span>P</span>
+</Link>
+```
+
+Hardcoded a un perfil que ni siquiera existía en la BD ("pablo_music"). Ahora:
+
+```jsx
+<Link to={`/perfil/${usuario.username}`}>
+  <span>{usuario.username.charAt(0).toUpperCase()}</span>
+</Link>
+```
+
+- `usuario.username` viene del backend al hacer login. Si maría inicia sesión, será `maria_indie`.
+- `charAt(0).toUpperCase()` saca la primera letra y la pone en mayúscula. Para `maria_indie` queda **M**.
+- La URL del perfil es la real del usuario, así que el botón apunta a `/perfil/maria_indie` y eso enlaza con la página de perfil que en pasos posteriores cargará sus reseñas y favoritos.
+
+### El link Admin condicional
+
+```jsx
+{usuario?.rol === "ADMIN" && (
+  <Link to="/admin">Admin</Link>
+)}
+```
+
+`usuario?.rol` usa optional chaining: si `usuario` es null, `null?.rol` es `undefined`, que no es igual a `"ADMIN"` → el bloque entero se evalúa a `false` y React no renderiza nada. Equivalente a:
+
+```js
+(usuario === null ? undefined : usuario.rol) === "ADMIN"
+```
+
+pero mucho más corto. Sin optional chaining, `usuario.rol` cuando `usuario` es `null` lanzaría un `TypeError`.
+
+### Detalles pequeños arreglados de paso
+
+- **Logo ahora es `<Link to="/">`.** Antes era un `<div>` no clicable. Es convención que el logo lleve al inicio.
+- **`aria-label` en los iconos sin texto** (lupa, corazón, avatar). Los lectores de pantalla anuncian el atributo en lugar de "imagen sin descripción". Accesibilidad básica.
+- **`onClick={handleLogout}` en lugar de `onClick={() => { logout(); navigate("/"); }}`** inline. Función nombrada porque hace dos cosas y el inline pierde legibilidad rápido.
+
+### Verificación
+
+| Paso | Esperado | Cumplido |
+|---|---|---|
+| Cargar `localhost:5173` sin sesión | "Entrar" y "Registrarse" visibles, sin ♥ ni avatar | ✅ |
+| Login con maría → ir a `/` | Avatar "M" en verde, ♥ visible, "Salir" visible, sin botones de auth | ✅ |
+| Refrescar la página estando logueado | Sigue logueado (gracias al localStorage del AuthContext) | ✅ |
+| Click en avatar | Lleva a `/perfil/maria_indie` | ✅ |
+| Click en "Salir" | Limpia sesión, redirige a `/`, vuelven los botones "Entrar"/"Registrarse" | ✅ |
+| Login con un usuario rol ADMIN | Aparece link "Admin" en la navbar | (pendiente — no hay usuario admin en la BD de prueba todavía) |
+
+### Lo que NO está hecho aún (a propósito)
+
+- **`/favoritos` sigue siendo accesible sin sesión** escribiendo la URL a mano. El navbar la oculta pero la ruta no está protegida. Eso es el **paso 4**.
+- El avatar es solo la inicial. Cuando un usuario suba foto de perfil habrá que mostrarla. Eso es el **paso 7** (páginas de usuario).
+- El link "Admin" se muestra correctamente, pero la página `/admin` aún no comprueba el rol. Lo arreglará el paso 4 con una protección por rol.
+
+Cada cosa en su paso para no mezclar responsabilidades.
+
+---
+
+## 5. Bug del frontend descubierto al probar el flujo real (B6)
+
+Al verificar manualmente el navbar dinámico, el primer intento de login con maría desde la UI (`localhost:5173`) devolvía sistemáticamente **400 "Email o contraseña incorrectos"**. Las mismas credenciales funcionaban perfectamente desde `curl` y desde Postman. Algo se estaba perdiendo entre el formulario y el backend.
+
+### Diagnóstico
+
+Pasos seguidos para localizarlo:
+
+1. Confirmar que el backend funciona: `curl -X POST /api/auth/login` con las credenciales → 200 + token. ✅
+2. Verificar que CORS no bloquea: la petición llega al backend (devuelve 400, no falla con `Failed to fetch`). ✅
+3. Mirar la **Network → Payload** en F12. Ahí se vería que el body real era `{"email":"","password":""}` — strings vacíos.
+
+Es decir, el formulario enviaba campos vacíos aunque en pantalla se viera el texto introducido.
+
+### Causa raíz
+
+El componente `FormInput.jsx` tenía esta firma:
+
+```jsx
+export default function FormInput({ label, type, placeholder, id, error }) {
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      <input id={id} type={type} placeholder={placeholder} className="..." />
+    </div>
+  );
+}
+```
+
+**No declaraba `value` ni `onChange` como props** y tampoco los pasaba al `<input>`. Pero `Login.jsx` y `Registro.jsx` los usaban:
+
+```jsx
+<FormInput
+  value={email}
+  onChange={e => setEmail(e.target.value)}
+  ...
+/>
+```
+
+Esos props **se descartaban silenciosamente**. El `<input>` real no era controlado por React. Lo que ocurría:
+
+1. El usuario teclea `maria@musicreviews.com` → el navegador muestra el texto en el campo (DOM).
+2. React no se entera de nada porque no hay `onChange` conectado.
+3. El estado `email` en `Login.jsx` sigue siendo `""`.
+4. Submit → `login("", "")` → backend recibe `{"email":"","password":""}` → 400.
+
+El bug pasaba desapercibido al ver la maquetación: las letras aparecen, los validadores HTML5 (`type="email"`) funcionan, todo se ve bien. Solo se manifiesta al hacer submit real.
+
+### Solución
+
+Que `FormInput` propague al `<input>` cualquier prop estándar mediante el operador rest:
+
+```jsx
+export default function FormInput({ label, type = "text", placeholder, id, error = false, ...rest }) {
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type={type}
+        placeholder={placeholder}
+        className="..."
+        {...rest}    // ← propaga value, onChange, name, autoComplete, required, etc.
+      />
+    </div>
+  );
+}
+```
+
+`{...rest}` incluye automáticamente `value` y `onChange` cuando los pasen, pero también `name`, `autoComplete="email"`, `required`, etc. Esto es la convención estándar para componentes que envuelven elementos HTML — de hecho cualquier librería de UI hace esto.
+
+### Verificación
+
+Tras el fix, recargar el navegador (HMR de Vite ya había aplicado el cambio) y probar el login: maría entró a la primera, el navbar cambió a la versión "con sesión" como se esperaba.
+
+### Lo que se aprendió
+
+- **Un componente que envuelve un elemento HTML estándar (`input`, `button`, `select`, ...) debe usar `{...rest}` para propagar props desconocidos.** Es el patrón que usa cualquier librería seria (MUI, Chakra, Radix). Si solo declaras los props que crees que vas a usar, te encontrarás con esto en cuanto alguien intente añadir un atributo nuevo.
+- **Las pruebas visuales no son pruebas funcionales.** El formulario "se veía bien" — letras aparecían, validadores HTML5 reaccionaban — pero no enviaba lo que el usuario tecleaba. Solo se descubrió al hacer un flujo de extremo a extremo.
+- **F12 → Network → Payload es la herramienta más útil** para aislar bugs frontend ↔ backend. Mirar lo que se envía, no lo que crees que se envía.
+
+### Por qué se cuenta como B6
+
+B1-B5 fueron bugs del **backend** detectados al integrar. B6 es del **frontend**, en un componente reutilizable que afectaba a Login, Registro y a cualquier futura página con `FormInput` (Editar perfil, etc.). Lo recogemos aquí para que la lista de bugs de la fase 4 esté completa.
+
+---
+
+## 6. Resumen de cambios durante esta sesión
+
+### Backend
 
 | Fichero | Cambio | Bug |
 |---|---|---|
@@ -616,18 +842,35 @@ Como aprendizaje para el resto del TFG: **a partir del paso 3 las llamadas reale
 | `controller/AuthController.java` | Lanzar `ReglaNegocioException` en lugar de devolver texto plano | B4 |
 | `test/.../ResenaServiceTest.java` | Añadir `@Mock EntityManager entityManager` | B5 |
 
-Total: **8 ficheros tocados**, **38/38 tests unitarios pasando**, todos los endpoints verificados con Postman.
+**8 ficheros del backend, 38/38 tests verdes.**
+
+### Frontend
+
+| Fichero | Cambio | Paso / Bug |
+|---|---|---|
+| `services/auth.js` | Capa de red: `POST /api/auth/login` y `/register` | Paso 1 |
+| `context/AuthContext.jsx` | Estado React de `usuario` y `token`, persistencia en localStorage, hook `useAuth()` | Paso 1 |
+| `main.jsx` | Envolver `<App />` con `<AuthProvider>` | Paso 1 |
+| `pages/Login.jsx`, `pages/Registro.jsx` | Conectados a `useAuth()` con manejo de error y estado de carga | Paso 2 |
+| `components/layout/Navbar.jsx` | Renderizado condicional según `usuario`, logout, avatar real, link Admin condicional | Paso 3 |
+| `components/ui/FormInput.jsx` | Propagar `{...rest}` al `<input>` para que value/onChange funcionen | B6 |
+| **Limpieza** | Borrar `App.css`, `react.svg`, `vite.svg`, `SESSION_LOG.md`, 6 README desactualizados, carpeta `hooks/` vacía | — |
+
+**6 ficheros tocados + 10 borrados de basura/docs antiguos.**
 
 ---
 
-## 5. Estado al cerrar esta entrega
+## 7. Estado al cerrar esta entrega
 
-✅ **Paso 1 (AuthContext) y paso 2 (Login + Registro) completos y funcionando contra el backend.**
+✅ **Paso 1 (AuthContext) completo.**
+✅ **Paso 2 (Login + Registro funcionales contra el backend) completo** — incluye el fix de B6 (FormInput sin propagar `value`/`onChange`), descubierto al hacer el primer login real desde el navegador.
+✅ **Paso 3 (Navbar dinámico) completo** — primer consumo de `useAuth()` fuera de los formularios de auth. Renderizado condicional sin/con sesión, logout funcional, avatar real con username del usuario, link Admin condicionado al rol.
+✅ **Login end-to-end verificado en el navegador** (no solo Postman): maría inicia sesión desde el formulario, el navbar reacciona, la sesión persiste al refrescar y el logout funciona.
 ✅ **Backend con 5 bugs arreglados y todas las relaciones LAZY serializando correctamente.**
-✅ **Tests unitarios verdes.**
+✅ **38/38 tests unitarios verdes.**
 ✅ **Postman documentado con flujo end-to-end del login + CRUD de reseñas y favoritos.**
 
-🔜 **Siguiente: paso 3 (Navbar dinámico).** Cambiar el Navbar para que muestre los botones "Entrar / Registrarse" cuando no hay sesión, y el avatar + opción de logout cuando sí la hay. Es la primera vez que el contexto se va a usar fuera de los formularios de auth.
+🔜 **Siguiente: paso 4 (Rutas protegidas).** Hoy `/favoritos`, `/admin`, `/crear-resena`, `/editar-perfil` son accesibles aunque no haya sesión escribiendo la URL a mano — solo están "ocultas" en el navbar. Hay que crear un componente `<RutaProtegida>` que comprueba el contexto y redirige a `/login` si no hay usuario, y un `<RutaAdmin>` que además exija `rol === "ADMIN"`.
 
 ---
 

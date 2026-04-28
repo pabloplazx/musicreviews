@@ -677,3 +677,117 @@ Tres planos de verificación:
 
 ✅ Paso 1 (AuthContext) y paso 2 (Login + Registro) cerrados. Login con maría desde Postman funciona, devuelve token y datos del usuario, error de credenciales devuelve JSON parseable.
 🔜 Paso 3: Navbar dinámico — primera vez que el contexto se va a usar fuera de los formularios de auth, mostrando avatar/logout cuando hay sesión y los botones Entrar/Registrarse cuando no.
+
+---
+
+## Semana 10 — Fase 4, sesión 2: Navbar dinámico (28/04/2026)
+
+**Fase:** FASE 4 — paso 3 del plan.
+
+### Objetivo
+
+Hacer que el `Navbar` reaccione al estado de sesión: mostrar opciones distintas según haya o no `usuario` en `AuthContext`. Es la primera vez que el contexto se consume **fuera** de los formularios de auth.
+
+### Cambios
+
+**Solo se ha tocado un fichero del frontend:** `src/components/layout/Navbar.jsx`.
+
+#### Renderizado condicional
+
+`useAuth()` da acceso a `usuario` y `logout`. Un único operador ternario sobre `usuario` decide qué bloque renderizar:
+
+| Elemento | Sin sesión | Con sesión |
+|---|---|---|
+| Logo, links Inicio / Explorar / Top Álbumes | ✅ | ✅ |
+| Buscador | ✅ | ✅ |
+| Botones "Entrar" / "Registrarse" | ✅ | ❌ |
+| Icono ♥ Favoritos | ❌ | ✅ |
+| Avatar circular con inicial real del usuario | ❌ | ✅ |
+| Botón "Salir" | ❌ | ✅ |
+| Link "Admin" | ❌ | Solo si `rol === "ADMIN"` |
+
+#### Logout
+
+```jsx
+function handleLogout() {
+  logout();
+  navigate("/");
+}
+```
+
+`logout()` (del contexto) limpia estado React + localStorage. `navigate("/")` redirige al home para evitar que el usuario se quede en una página privada con datos cacheados. Se usa `<button onClick>` y NO `<Link>` porque es una **acción**, no navegación.
+
+#### Avatar dinámico
+
+Antes: hardcoded `<Link to="/perfil/pablo_music">P</Link>`. Ahora:
+
+```jsx
+<Link to={`/perfil/${usuario.username}`}>
+  {usuario.username.charAt(0).toUpperCase()}
+</Link>
+```
+
+Para `maria_indie` muestra "M" y enlaza a `/perfil/maria_indie`.
+
+#### Link Admin condicional
+
+```jsx
+{usuario?.rol === "ADMIN" && <Link to="/admin">Admin</Link>}
+```
+
+Optional chaining para evitar el `TypeError` cuando `usuario` es `null` en el primer render.
+
+#### Detalles pequeños arreglados de paso
+
+- Logo ahora es `<Link to="/">` (antes era un `<div>` no clicable).
+- `aria-label` en iconos sin texto (lupa, corazón, avatar) para lectores de pantalla.
+
+### Verificación
+
+Probado manualmente con `npm run dev` (puerto 5173):
+
+| Paso | Esperado | Cumplido |
+|---|---|---|
+| Cargar la app sin sesión | Botones "Entrar"/"Registrarse" visibles, sin ♥ ni avatar | ✅ |
+| Login con maría → home | Avatar "M" verde, ♥ visible, "Salir" visible, sin botones de auth | ✅ |
+| Refrescar la página estando logueado | Sigue logueado (localStorage) | ✅ |
+| Click en avatar | Lleva a `/perfil/maria_indie` | ✅ |
+| Click en "Salir" | Limpia sesión, vuelve a `/`, reaparecen botones de auth | ✅ |
+
+### Bug B6 detectado al verificar el login real (frontend)
+
+Al hacer el primer intento de login real desde el navegador (no Postman), el backend respondía 400 "Email o contraseña incorrectos" sistemáticamente, aunque las credenciales fueran las correctas y funcionaran desde curl/Postman.
+
+**Causa raíz:** el componente `FormInput.jsx` tenía esta firma:
+
+```jsx
+export default function FormInput({ label, type, placeholder, id, error }) {
+  return <input id={id} type={type} placeholder={placeholder} ... />;
+}
+```
+
+No declaraba `value` ni `onChange` como props y tampoco los pasaba al `<input>`. Cuando `Login.jsx` los usaba (`<FormInput value={email} onChange={...} />`), se descartaban silenciosamente. El `<input>` real no era controlado por React: el usuario tecleaba, las letras aparecían en pantalla, pero el estado `email`/`password` en `Login.jsx` seguía siendo `""`. Al hacer submit se enviaba `{"email":"","password":""}` al backend.
+
+**Solución:** que `FormInput` propague al `<input>` cualquier prop estándar mediante el operador rest:
+
+```jsx
+export default function FormInput({ label, type = "text", placeholder, id, error = false, ...rest }) {
+  return (
+    <input id={id} type={type} placeholder={placeholder} className="..." {...rest} />
+  );
+}
+```
+
+Esto incluye `value`, `onChange`, `name`, `autoComplete`, `required`, etc. Es la convención estándar de cualquier librería de UI (MUI, Chakra, Radix).
+
+**Aprendizaje:** las pruebas visuales no son pruebas funcionales. El formulario "se veía bien" pero no enviaba lo que el usuario tecleaba. Solo se descubrió al hacer un flujo end-to-end real. F12 → Network → Payload reveló el body real con campos vacíos.
+
+Ver detalle completo en [`integracion.md` § 5](integracion.md) y [`pruebas_postman.md`](pruebas_postman.md) (B6).
+
+### Estado al cerrar la sesión
+
+✅ Pasos 1, 2 y 3 completos. Bug B6 (FormInput) arreglado.
+✅ Login end-to-end **verificado en el navegador** (no solo Postman): maría inicia sesión desde el formulario, el navbar reacciona, la sesión persiste al refrescar y el logout funciona.
+🔜 Paso 4: Rutas protegidas. Hoy `/favoritos`, `/admin`, `/crear-resena`, `/editar-perfil` son accesibles escribiendo la URL a mano aunque no haya sesión — el navbar las oculta pero la ruta no está protegida. Hay que crear un componente wrapper `<RutaProtegida>` que comprueba el contexto y redirige a `/login` si no hay usuario, y un `<RutaAdmin>` que además exija `rol === "ADMIN"`.
+
+Detalle paso a paso en [`integracion.md` § 4 y § 5](integracion.md).
