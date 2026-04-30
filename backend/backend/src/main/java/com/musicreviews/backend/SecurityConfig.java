@@ -31,7 +31,13 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         // localhost:5173 -> Vite dev server (npm run dev)
         // localhost      -> nginx en Docker (puerto 80, sin sufijo)
-        config.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost"));
+        // zentimes.es    -> producción
+        config.setAllowedOrigins(List.of(
+            "http://localhost:5173",
+            "http://localhost",
+            "https://zentimes.es",
+            "https://www.zentimes.es"
+        ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
