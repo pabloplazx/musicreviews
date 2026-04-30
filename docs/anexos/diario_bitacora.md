@@ -659,7 +659,7 @@ Tres planos de verificación:
 
 ### Cambios en el código
 
-**Backend** (`MusicReviews_TFG/backend/backend/`):
+**Backend** (`musicreviews/backend/backend/`):
 - `src/main/resources/application.properties` (B1)
 - `src/main/java/.../model/Usuario.java`, `Album.java`, `Artista.java`, `Resena.java`, `Favorito.java` (B2)
 - `src/main/java/.../service/ResenaService.java` (B3)

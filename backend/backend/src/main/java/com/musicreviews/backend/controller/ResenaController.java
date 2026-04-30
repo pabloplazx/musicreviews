@@ -4,6 +4,7 @@ import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Resena;
 import com.musicreviews.backend.service.ResenaService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -44,14 +45,14 @@ public class ResenaController {
     // usuarioId del body coincide con el del token (un usuario no puede crear reseñas en
     // nombre de otro). 403 si se intenta suplantar.
     @PostMapping
-    public ResponseEntity<Resena> crear(@RequestBody Resena resena, Authentication auth) {
+    public ResponseEntity<Resena> crear(@Valid @RequestBody Resena resena, Authentication auth) {
         return ResponseEntity.ok(resenaService.crear(resena, auth.getName(), esAdmin(auth)));
     }
 
     // PUT /api/resenas/{id} → actualiza puntuación y comentario. Solo el dueño o ADMIN.
     // 400 si puntuación inválida, 403 si no es dueño, 404 si no existe.
     @PutMapping("/{id}")
-    public ResponseEntity<Resena> actualizar(@PathVariable Long id, @RequestBody Resena datos, Authentication auth) {
+    public ResponseEntity<Resena> actualizar(@PathVariable Long id, @Valid @RequestBody Resena datos, Authentication auth) {
         return ResponseEntity.ok(resenaService.actualizar(id, datos, auth.getName(), esAdmin(auth)));
     }
 

@@ -3,6 +3,7 @@ package com.musicreviews.backend.controller;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.service.AlbumService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -61,13 +62,13 @@ public class AlbumController {
 
     // POST /api/albumes → crea un álbum nuevo. Solo accesible por ADMIN (SecurityConfig).
     @PostMapping
-    public ResponseEntity<Album> crear(@RequestBody Album album) {
+    public ResponseEntity<Album> crear(@Valid @RequestBody Album album) {
         return ResponseEntity.ok(albumService.guardar(album));
     }
 
     // PUT /api/albumes/{id} → actualiza todos los campos de un álbum. 404 si no existe.
     @PutMapping("/{id}")
-    public ResponseEntity<Album> actualizar(@PathVariable Long id, @RequestBody Album datos) {
+    public ResponseEntity<Album> actualizar(@PathVariable Long id, @Valid @RequestBody Album datos) {
         return ResponseEntity.ok(albumService.actualizar(id, datos));
     }
 

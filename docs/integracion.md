@@ -788,7 +788,7 @@ Esos props **se descartaban silenciosamente**. El `<input>` real no era controla
 3. El estado `email` en `Login.jsx` sigue siendo `""`.
 4. Submit → `login("", "")` → backend recibe `{"email":"","password":""}` → 400.
 
-El bug pasaba desapercibido al ver la maquetación: las letras aparecen, los validadores HTML5 (`type="email"`) funcionan, todo se ve bien. Solo se manifiesta al hacer submit real.
+El bug pasaba desapercibido durante la inspección visual: las letras aparecen, los validadores HTML5 (`type="email"`) operan correctamente y el comportamiento aparente es el esperado. La inconsistencia solo se manifiesta al ejecutar el submit real.
 
 ### Solución
 
@@ -1082,7 +1082,7 @@ Antes solo existía `services/auth.js`. Para el paso 5 se han creado tres servic
 
 - Coincide con la estructura del backend (un controller por dominio).
 - Si se añade un dominio nuevo se crea su fichero, sin tocar los existentes.
-- Cada fichero queda corto (10–30 líneas) y se entiende de un vistazo.
+- Cada fichero queda corto (10–30 líneas) y resulta inmediatamente legible.
 - En cualquier librería profesional (axios + tanstack query, RTK Query) se hace así.
 
 Patrón común a los tres:
@@ -1536,9 +1536,9 @@ const [fotoPerfil, setFotoPerfil] = useState(usuario?.fotoPerfil ?? "");
 
 No hace falta otra fetch — la información ya está en `useAuth()` desde el login. Si el usuario edita campos y refresca la página antes de guardar, los cambios se pierden (esperado).
 
-**Email de solo lectura:** el backend no permite cambiar el email (ver `UsuarioService.actualizar`). En lugar de mostrar un campo editable que va a fallar, se muestra `disabled` con un mensaje "El email no se puede modificar". Honesto.
+**Email de solo lectura:** el backend no permite modificar el email (ver `UsuarioService.actualizar`). En lugar de exponer un campo editable cuyo envío fallaría, el control se renderiza como `disabled` acompañado del mensaje "El email no se puede modificar". El comportamiento queda explícito para el usuario.
 
-**URL de foto en lugar de upload:** el backend no tiene endpoint multipart para subir archivos. Para no dejar el feature roto, el campo es un input `type="url"` donde el usuario pega la URL de una imagen pública. Funciona, no engaña, y queda documentado como simplificación. La preview de la foto se muestra al lado del input.
+**URL de foto en lugar de carga de archivo:** el backend no dispone de un endpoint multipart para la subida de archivos. Para no dejar la funcionalidad incompleta, el campo se implementa como `input type="url"`, en el que el usuario introduce la URL de una imagen pública. Solución funcional, transparente para el usuario y documentada como limitación de alcance. La previsualización de la imagen se muestra junto al input.
 
 **Botones eliminados:**
 
@@ -2090,10 +2090,10 @@ Cada una de las limitaciones que quedan se podría implementar con un cambio rel
 Esta sección recoge las justificaciones técnicas sueltas para tenerlas a mano en la defensa.
 
 **¿Por qué un Context y no Redux/Zustand?**
-La app no tiene estado global complejo. Solo necesita compartir `usuario` y `token`. Context resuelve eso en 50 líneas sin librerías extra. Redux sería *over-engineering* para un TFG.
+La aplicación no requiere un estado global complejo. Únicamente es necesario compartir `usuario` y `token`. Context resuelve este caso en aproximadamente 50 líneas, sin dependencias adicionales. La incorporación de Redux constituiría una sobreingeniería innecesaria para el alcance de un TFG.
 
 **¿Por qué localStorage y no cookies?**
-El backend devuelve un JWT en el body, no como cookie. Para que el frontend lo guarde y lo mande en el header `Authorization: Bearer ...`, lo más simple es localStorage. Las cookies HttpOnly serían más seguras contra XSS pero requieren cambiar el backend para que las setee y que el frontend las mande automáticamente — más complejo.
+El backend devuelve el JWT en el body, no como cookie. Para que el frontend lo almacene y lo envíe en el header `Authorization: Bearer ...`, la solución más sencilla es localStorage. Las cookies HttpOnly ofrecerían mayor protección frente a XSS, pero requerirían modificar el backend para que las establezca como respuesta y el frontend las envíe automáticamente — solución más compleja.
 
 **¿Por qué `fetch` y no Axios?**
 `fetch` es nativo del navegador desde hace años. La app tiene 2 endpoints de auth y unos pocos de datos: una librería de 30KB extra no se justifica. Si en el futuro hace falta interceptores (renovar token automáticamente, por ejemplo), se reevalúa.

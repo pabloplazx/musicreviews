@@ -534,14 +534,14 @@ mvnw.cmd test
 
 | Clase de test | Servicio probado | Nº tests | Casos cubiertos |
 |---|---|---|---|
-| `ResenaServiceTest` | `ResenaService` | 11 | Puntuación inválida (0, 6), reseña duplicada, crear/actualizar/eliminar correctos, consultas |
-| `UsuarioServiceTest` | `UsuarioService` | 7 | Email duplicado, username duplicado, actualizar/eliminar correctos e inexistentes |
-| `FavoritoServiceTest` | `FavoritoService` | 7 | Favorito duplicado, eliminar inexistente, esFavorito, obtenerPorUsuario |
+| `ResenaServiceTest` | `ResenaService` | 17 | CRUD + validaciones + duplicados + verificación de propiedad (owner/admin) |
+| `UsuarioServiceTest` | `UsuarioService` | 11 | Registro, actualización con verificación, eliminación con verificación |
+| `FavoritoServiceTest` | `FavoritoService` | 9 | CRUD de favoritos + verificación de propiedad |
 | `ArtistaServiceTest` | `ArtistaService` | 7 | Actualizar/eliminar correctos e inexistentes, buscarPorNombre, obtenerPorId |
 | `EstadisticasServiceTest` | `EstadisticasService` | 5 | Totales del resumen, distribución de géneros, listas vacías sin reseñas |
 | `BackendApplicationTests` | Contexto Spring | 1 | Carga correcta del contexto de aplicación (requiere BD activa) |
 
-**Total: 38 tests**
+**Total: 50 tests** (38 originales + 12 incorporados durante la auditoría de seguridad del 28/04/2026)
 
 ---
 

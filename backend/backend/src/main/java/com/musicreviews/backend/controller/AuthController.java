@@ -7,6 +7,7 @@ import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.security.JwtUtil;
 import com.musicreviews.backend.service.UsuarioService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,7 +30,7 @@ public class AuthController {
     // La contraseña se hashea con BCrypt antes de guardarla.
     // Las validaciones de duplicado las gestiona UsuarioService (lanza ReglaNegocioException → 400).
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         Usuario usuario = new Usuario();
         usuario.setUsername(request.getUsername());
         usuario.setEmail(request.getEmail());
@@ -46,7 +47,7 @@ public class AuthController {
     // Los errores se lanzan como ReglaNegocioException (400 + JSON uniforme) en lugar de devolver
     // texto plano, para que el frontend pueda parsear siempre la respuesta como JSON.
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         Usuario usuario = usuarioService.obtenerPorEmail(request.getEmail()).orElse(null);
 
         if (usuario == null || !passwordEncoder.matches(request.getPassword(), usuario.getPassword())) {
