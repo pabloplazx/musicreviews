@@ -2,6 +2,9 @@ package com.musicreviews.backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -31,7 +34,12 @@ public class Resena {
     @JoinColumn(name = "album_id", nullable = false)
     private Album album;
 
-    // Puntuación de 0.5 a 5 en incrementos de 0.5 (medias estrellas). La validación del rango se hace en la capa de servicio.
+    // Puntuación de 0.5 a 5 en incrementos de 0.5 (medias estrellas).
+    // El rango se valida con @DecimalMin/Max para fail-fast antes del service.
+    // La capa de servicio sigue validando porque puede llamarse sin pasar por el controller.
+    @NotNull(message = "La puntuación es obligatoria")
+    @DecimalMin(value = "0.5", message = "La puntuación mínima es 0.5")
+    @DecimalMax(value = "5.0", message = "La puntuación máxima es 5")
     @Column(nullable = false)
     private Double puntuacion;
 

@@ -44,9 +44,3 @@ backend/backend/uploads/
 # Datos de importación con datos externos
 docs/importacion/*.csv
 docs/importacion/*.txt
-
-# Herramientas de desarrollo y asistencia (no forman parte del proyecto)
-CLAUDE.md
-.claude/
-*.claude
-claude.txt

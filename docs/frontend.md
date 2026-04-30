@@ -12,7 +12,7 @@ Documentación del desarrollo del frontend: proceso, decisiones de diseño, prob
 
 ### Punto de partida
 
-El backend estaba 100% completo (Java 21 + Spring Boot, MySQL en Aiven, JWT, 38 tests). Toca arrancar el frontend desde cero.
+El backend estaba 100% completo (Java 21 + Spring Boot, MySQL en Aiven, JWT, 38 tests). Procede iniciar el desarrollo del frontend desde cero.
 
 ### Creación del proyecto
 
@@ -114,7 +114,7 @@ Cuatro secciones:
 
 ### Repositorio independiente
 
-El frontend vive en su propio repositorio GitHub (`pabloplazx/musicreviews-frontend`) separado del repo principal del TFG (`MusicReviews_TFG`). Esto permite deploys independientes en el futuro y mantiene limpio el historial de cada parte.
+El frontend vive en su propio repositorio GitHub (`pabloplazx/musicreviews-frontend`) separado del repo principal del TFG (`musicreviews`). Esto permite deploys independientes en el futuro y mantiene limpio el historial de cada parte.
 
 ### Componente `FormInput`
 
@@ -126,7 +126,7 @@ Card centrada verticalmente con `min-h-[calc(100vh-64px)]` (resta la altura del 
 
 ### Página Registro — `/registro`
 
-Misma estructura visual que Login. Cuatro campos: username, email, contraseña, confirmar contraseña. Sin banner de error por ahora — los errores de validación se añadirán al conectar el backend.
+Misma estructura visual que Login. Cuatro campos: username, email, contraseña, confirmar contraseña. Banner de error no incorporado en este punto — la validación se añadirá al integrar con el backend.
 
 ### Componentes para Catálogo y Búsqueda
 
@@ -184,7 +184,7 @@ Se añadió el icono SVG de lupa al Navbar (entre los links y los botones), enla
 
 ### Metodología con Figma MCP
 
-A partir de esta sesión se trabajó consultando el diseño directamente en Figma Desktop a través del MCP antes de codificar cada pantalla. Esto garantizó fidelidad con el prototipo y evitó iterar sobre el diseño a ciegas.
+A partir de esta sesión se trabajó consultando el diseño directamente en Figma Desktop a través del MCP antes de codificar cada pantalla. Este enfoque garantizó la fidelidad con el prototipo y evitó iteraciones sin referencia visual.
 
 ### Refactorización de `App.jsx` — patrón SIN_NAVBAR
 
@@ -265,9 +265,9 @@ function handleMouseMove(e, i) {
 
 - El botón "Editar perfil" usa `absolute top-0 right-0` dentro del header del perfil (`position: relative`). Esto lo ancla a la esquina superior derecha del header sin depender del flujo del documento.
 - Tabs con indicador de línea verde: `<span class="absolute bottom-0 left-0 w-full h-0.5 bg-primary" />` dentro del botón del tab activo. Efecto visual limpio sin librería de tabs.
-- El tab Favoritos usa grid 6 columnas (más denso que el catálogo en 5) porque son álbumes personales, se espera que el usuario quiera ver más de un vistazo.
+- El tab Favoritos usa grid de 6 columnas (más denso que el catálogo, que utiliza 5) por tratarse de álbumes personales: se prioriza una visualización de conjunto.
 
-**Bug corregido en esta sesión:** el badge del corazón en los favoritos tenía `bg-white text-primary`. Incorrecto — sobre fondo blanco el ♥ verde no se ve bien y rompe la consistencia del design system. Corregido a `bg-primary text-white`.
+**Bug corregido en esta sesión:** el badge del corazón en los favoritos tenía `bg-white text-primary`. Incorrecto — sobre fondo blanco el ♥ verde pierde legibilidad y rompe la consistencia del design system. Corregido a `bg-primary text-white`.
 
 ### Página Editar Perfil — `/editar-perfil`
 
@@ -569,9 +569,9 @@ Documento completo del proceso: [`auditoria_seguridad.md`](auditoria_seguridad.m
 
 | Decisión | Razón |
 |---|---|
-| Context API en vez de Redux/Zustand | El estado compartido se reduce a `usuario` y `token`. Context resuelve eso en 50 líneas. Redux sería over-engineering para un TFG. |
-| `localStorage` en vez de cookies HttpOnly | El backend devuelve el JWT en el body. Para el header `Authorization: Bearer ...` lo más simple es localStorage. Cookies HttpOnly serían más seguras contra XSS pero requieren cambiar el backend. |
-| `fetch` nativo en vez de Axios | App con pocos endpoints. No se justifica una dependencia de 30 KB extra solo por azúcar sintáctico. Si en el futuro hace falta interceptores se reevalúa. |
+| Context API en lugar de Redux/Zustand | El estado compartido se reduce a `usuario` y `token`. Context resuelve este caso en aproximadamente 50 líneas. La incorporación de Redux constituiría una sobreingeniería innecesaria para el alcance del proyecto. |
+| `localStorage` en lugar de cookies HttpOnly | El backend devuelve el JWT en el body. Para el header `Authorization: Bearer ...` la solución más sencilla es localStorage. Las cookies HttpOnly ofrecerían mayor protección frente a XSS, pero requerirían modificar el backend. |
+| `fetch` nativo en lugar de Axios | Aplicación con un número reducido de endpoints. No se justifica añadir una dependencia adicional de 30 KB únicamente por mejoras sintácticas. Si en el futuro se requiriesen interceptores, se reevaluará la decisión. |
 | Capa `services/` separada del contexto | El contexto solo gestiona estado React. La red está en `services/auth.js`. Si mañana se cambia a Axios o se añade renovación automática de token, solo se toca un fichero. |
 | Errores como `throw new Error(mensaje)` | Idiomático en JS async — quien llama hace `try/catch`. El `mensaje` viene del campo `mensaje` del JSON del backend (`GlobalExceptionHandler`). |
 

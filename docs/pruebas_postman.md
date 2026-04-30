@@ -527,7 +527,7 @@ No declaraba `value` ni `onChange` como props y tampoco los pasaba al `<input>`.
 
 Esos props se descartaban silenciosamente. El `<input>` real no era controlado por React. El usuario tecleaba, las letras aparecían en el DOM, pero el estado `email` en `Login.jsx` seguía siendo `""`. Submit → `login("", "")` → 400.
 
-El bug pasaba desapercibido al ver la maquetación: las letras aparecen, los validadores HTML5 funcionan, todo se ve bien. Solo se manifestaba al hacer un submit real.
+El bug pasaba desapercibido durante la inspección visual: las letras aparecen, los validadores HTML5 operan correctamente y el comportamiento aparente es el esperado. La inconsistencia solo se manifestaba al ejecutar el submit real.
 
 **Solución:** que `FormInput` propague al `<input>` cualquier prop estándar mediante el operador rest:
 

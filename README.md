@@ -1,7 +1,9 @@
 # MusicReviews
 
 Aplicación web de reseñas de álbumes musicales, similar a Letterboxd pero orientada a música.
-Los usuarios pueden buscar álbumes, escribir reseñas con puntuación del 1 al 5 y guardar favoritos.
+Los usuarios pueden buscar álbumes, escribir reseñas con puntuación de 0.5 a 5 estrellas, y guardar favoritos. Incluye panel de administración para gestión de catálogo y usuarios.
+
+Proyecto desarrollado como Trabajo de Fin de Grado del CFGS DAM (IES Rosa Chacel).
 
 ---
 
@@ -9,120 +11,201 @@ Los usuarios pueden buscar álbumes, escribir reseñas con puntuación del 1 al 
 
 | Capa | Tecnología |
 |---|---|
-| Backend | Java 21 + Spring Boot 4.0.5 + Maven + Spring Security 7 + JWT |
+| Backend | Java 21 + Spring Boot 4.0.5 + Maven + Spring Security 7 + JWT + Bean Validation |
 | Frontend | React 19 + Vite 6 + Tailwind CSS 4 + React Router 7 — [`musicreviews-frontend`](https://github.com/pabloplazx/musicreviews-frontend) (repo separado) |
-| Base de datos | MySQL en la nube — [Aiven](https://aiven.io) (plan gratuito permanente) |
+| Base de datos | MySQL 8 (en contenedor con datos preseed para evaluación local; Aiven para desarrollo activo) |
+| Contenerización | Docker + Docker Compose (multi-stage builds, healthchecks, persistencia con volúmenes) |
+| Integración continua | GitHub Actions — publicación automática de imágenes en GHCR en cada push a `main` |
 
 ---
 
 ## Estructura del proyecto
 
 ```
-MusicReviews_TFG/
+musicreviews/
+├── .github/workflows/
+│   └── docker-publish.yml        ← CI: build y publicación de imágenes en GHCR
 ├── backend/
 │   └── backend/                  ← Proyecto Spring Boot
+│       ├── Dockerfile            ← Multi-stage build (Maven → JDK)
+│       ├── .dockerignore
 │       ├── src/main/java/com/musicreviews/backend/
-│       │   ├── model/            ← Entidades JPA (tablas de la BD)
+│       │   ├── model/            ← Entidades JPA con Bean Validation
 │       │   ├── repository/       ← Acceso a la BD (Spring Data JPA)
 │       │   ├── service/          ← Lógica de negocio
 │       │   ├── controller/       ← Endpoints REST
 │       │   ├── security/         ← JWT (JwtUtil, JwtFilter, UserDetailsServiceImpl)
 │       │   ├── exception/        ← Excepciones tipadas + GlobalExceptionHandler
-│       │   ├── dto/              ← Objetos de transferencia (register, login, auth response)
+│       │   ├── dto/              ← DTOs con validaciones declarativas
 │       │   ├── SecurityConfig.java
 │       │   └── README.md         ← Documentación completa de la API
-│       ├── src/test/java/com/musicreviews/backend/
-│       │   └── service/          ← 50 tests unitarios (JUnit 5 + Mockito) — 38 base + 12 de la auditoría de seguridad
+│       ├── src/test/java/        ← 50 tests unitarios (JUnit 5 + Mockito)
 │       └── src/main/resources/
 │           └── application.properties.example
+├── musicreviews-frontend/        ← (clonar aparte, repo independiente)
+│   ├── Dockerfile                ← Multi-stage build (Node → nginx)
+│   ├── nginx.conf                ← Configuración con SPA fallback
+│   └── ...
 ├── database/
-│   ├── schema.sql                ← Script SQL para crear la base de datos
-│   └── seed_data.py              ← Script Python para cargar datos de ejemplo vía API
-└── docs/
-    ├── diagrama_arquitectura.png
-    ├── diagrama_bd_nuevo.png
-    ├── diagrama_clases.png
-    ├── diagrama_casos_uso.png
-    ├── diario_bitacora.md         ← Bitácora semanal de todo el desarrollo (fases 1-4)
-    ├── tests_unitarios.md         ← Documentación completa de los 50 tests unitarios
-    ├── auditoria_seguridad.md     ← Auditoría de seguridad (28/04/2026): proceso, mitigación, resultado
-    ├── pruebas_postman.md         ← Pruebas Postman, bugs encontrados y resueltos (incl. B1-B5 de fase 4)
-    ├── migracion_aiven.md         ← Proceso de migración de BD local a Aiven (MySQL cloud)
-    ├── seguridad_autenticacion.md ← JWT, BCrypt, CORS y protección de contraseñas
-    ├── refactorizacion_backend.md ← Optimizaciones y refactorizaciones del backend
-    ├── frontend.md                ← Proceso de desarrollo del frontend (fases 3 y 4)
-    ├── integracion.md             ← Fase 4: integración frontend ↔ backend, AuthContext, bugs B1-B5
-    ├── tailwind-guide.md          ← Guía de clases Tailwind utilizadas en el frontend
-    ├── diseño/                    ← Capturas Figma y especificación del design system
-    ├── importacion/               ← Scripts y documentación del proceso de importación desde Spotify
-    └── referencias/               ← Enlaces e inspiración para el diseño del frontend
+│   ├── schema.sql                ← Esquema de tablas (referencia)
+│   ├── seed.sql                  ← Dump de datos preseed (cargado por el contenedor MySQL)
+│   ├── dump-aiven.sh             ← Script para regenerar seed.sql desde Aiven
+│   └── seed_data.py              ← Script Python alternativo para sembrar datos vía API
+├── docs/                         ← Documentación técnica completa (ver sección al final)
+├── docker-compose.yml            ← Orquestación de los 3 servicios (mysql + backend + frontend)
+├── .env.example                  ← Plantilla de variables de entorno
+└── README.md                     ← Este archivo
 ```
 
 ---
 
-## Poner en marcha el proyecto
+## Cómo levantar el proyecto
 
-### Requisitos previos
+Hay dos formas de poner en marcha la aplicación. La **opción A (Docker)** es la recomendada para evaluación o demostración. La **opción B (local)** es la habitual durante el desarrollo activo.
+
+### Opción A — Docker (recomendada)
+
+Esta opción levanta toda la pila (base de datos preseed + backend + frontend) con un único comando, sin necesidad de instalar Java, Node ni MySQL en la máquina anfitriona.
+
+#### Requisitos previos
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) instalado y en ejecución
+- Git
+
+#### Pasos
+
+1. Clonar los dos repositorios en directorios paralelos:
+
+   ```bash
+   git clone https://github.com/pabloplazx/musicreviews.git
+   git clone https://github.com/pabloplazx/musicreviews-frontend.git
+   ```
+
+   La estructura resultante debe ser:
+   ```
+   .
+   ├── musicreviews/
+   └── musicreviews-frontend/
+   ```
+
+2. Entrar en el repositorio principal y preparar las variables de entorno:
+
+   ```bash
+   cd musicreviews
+   cp .env.example .env
+   ```
+
+   Editar `.env` con valores reales (si solo se desea evaluar, los placeholders del ejemplo son funcionales para todo excepto la regeneración del seed con `dump-aiven.sh`).
+
+3. Levantar el stack:
+
+   ```bash
+   docker compose up --build
+   ```
+
+   La primera ejecución descarga las imágenes base e instala dependencias (5–10 minutos según conexión y hardware). Los arranques subsiguientes con caché caliente toman aproximadamente 30 segundos.
+
+4. Acceder a la aplicación:
+
+   | Recurso | URL |
+   |---|---|
+   | Aplicación web (frontend) | http://localhost |
+   | API REST (backend) | http://localhost:8080/api |
+   | Base de datos MySQL (cliente externo) | `localhost:3307` (usuario y contraseña en `.env`) |
+
+5. Detener la pila:
+
+   ```bash
+   # Ctrl+C en la terminal del docker compose up, y opcionalmente:
+   docker compose down            # conserva el volumen mysql_data (datos persisten)
+   docker compose down -v         # borra el volumen (reset completo, recarga seed la próxima vez)
+   ```
+
+#### Variante: usar imágenes preconstruidas desde GHCR (sin build local)
+
+Las imágenes del backend y frontend se publican automáticamente en GitHub Container Registry en cada push a `main`. Si se desea evitar el build local, basta con omitir la flag `--build`:
+
+```bash
+docker compose up
+```
+
+Docker descarga las imágenes desde `ghcr.io/pabloplazx/musicreviews-backend:latest` y `ghcr.io/pabloplazx/musicreviews-frontend:latest` (segundos en lugar de minutos).
+
+Documentación completa del proceso de dockerización (decisiones, problemas encontrados y soluciones) en [`docs/dockerizacion.md`](docs/dockerizacion.md).
+
+---
+
+### Opción B — Desarrollo local (sin Docker)
+
+Esta opción es la habitual durante el desarrollo activo, ya que permite hot-reload del frontend y depuración del backend desde el IDE.
+
+#### Requisitos previos
 - Java 21
-- Maven
-- Cuenta en [Aiven](https://aiven.io) con un servicio MySQL activo (o MySQL local)
+- Maven (incluido como wrapper `mvnw`, no requiere instalación)
+- Node 20+
+- Cuenta en [Aiven](https://aiven.io) con servicio MySQL activo, o MySQL 8 local
 
-### 1. Base de datos
+#### Configuración del backend
 
-La base de datos está alojada en **Aiven** (MySQL cloud). No es necesario instalar MySQL localmente.
+1. Copiar el archivo de ejemplo y rellenar con credenciales reales:
 
-Si quisieras usar MySQL local, puedes ejecutar el script de esquema:
-```sql
-source database/schema.sql
-```
+   ```
+   backend/backend/src/main/resources/application.properties.example
+       → application.properties
+   ```
 
-### 2. Configuración
-Copiar el archivo de ejemplo y rellenar con tus credenciales de Aiven:
-```
-backend/backend/src/main/resources/application.properties.example → application.properties
-```
+   Para Aiven:
+   ```properties
+   spring.datasource.url=jdbc:mysql://<host>:<port>/defaultdb?useSSL=true&requireSSL=true
+   spring.datasource.username=avnadmin
+   spring.datasource.password=TU_PASSWORD_AIVEN
+   ```
 
-Configuración para Aiven:
-```properties
-spring.datasource.url=jdbc:mysql://<host>:<port>/defaultdb?useSSL=true&requireSSL=true
-spring.datasource.username=avnadmin
-spring.datasource.password=TU_PASSWORD_AIVEN
-```
+   Las credenciales se obtienen en el panel de Aiven → servicio MySQL → pestaña *Connection information*.
 
-Los datos de conexión (host, port, password) se encuentran en el panel de Aiven → tu servicio MySQL → pestaña **Connection information**.
+2. Arrancar el backend:
 
-### 3. Arrancar el backend
-```bash
-cd backend/backend
-./mvnw spring-boot:run
-```
+   ```bash
+   cd backend/backend
+   ./mvnw spring-boot:run        # Linux/macOS
+   ./mvnw.cmd spring-boot:run    # Windows
+   ```
 
-La API quedará disponible en `http://localhost:8080`.
+   La API queda disponible en `http://localhost:8080`.
 
-### 4. Cargar datos de ejemplo (opcional)
+#### Configuración del frontend
 
-El script `database/seed_data.py` carga 5 usuarios, 30 reseñas y 25 favoritos a través de la API. Requiere que el backend esté corriendo:
+1. Crear un `.env` en la raíz del repositorio del frontend:
 
-```bash
-python -X utf8 database/seed_data.py
-```
+   ```
+   VITE_API_URL=http://localhost:8080/api
+   ```
 
-> La flag `-X utf8` es necesaria en Windows para evitar errores de codificación con caracteres especiales.
+2. Instalar dependencias y arrancar el servidor de desarrollo:
+
+   ```bash
+   cd musicreviews-frontend
+   npm install
+   npm run dev
+   ```
+
+   La aplicación queda disponible en `http://localhost:5173`.
 
 ---
 
 ## Tests
 
-El backend cuenta con **50 tests unitarios** que cubren la lógica de negocio principal y la verificación de propiedad de recursos (auditoría de seguridad del 28/04):
+El backend dispone de **50 tests unitarios** que cubren la lógica de negocio principal y la verificación de propiedad de recursos (incorporada en la auditoría de seguridad del 28/04/2026):
 
-| Clase de test | Tests | Qué cubre |
+| Clase de test | Tests | Cobertura |
 |---|---|---|
-| `ResenaServiceTest` | 17 | CRUD + validaciones + duplicados + verificación de propiedad (owner/admin) |
-| `UsuarioServiceTest` | 11 | Registro, actualización (con verificación), eliminación (con verificación) |
+| `ResenaServiceTest` | 17 | CRUD + validaciones + duplicados + verificación de propiedad |
+| `UsuarioServiceTest` | 11 | Registro, actualización con verificación, eliminación con verificación |
 | `FavoritoServiceTest` | 9 | CRUD de favoritos + verificación de propiedad |
 | `ArtistaServiceTest` | 7 | CRUD de artistas |
 | `EstadisticasServiceTest` | 5 | Rankings, top álbumes, estadísticas generales |
 | `BackendApplicationTests` | 1 | Carga del contexto de Spring Boot |
+
+Ejecución:
 
 ```bash
 cd backend/backend
@@ -137,43 +220,66 @@ Todos los endpoints devuelven errores en formato JSON uniforme gracias al `Globa
 
 ```json
 {
-    "timestamp": "2026-04-20T12:34:56.789",
-    "status": 404,
-    "mensaje": "Álbum no encontrado"
+    "timestamp": "2026-04-30T12:34:56.789",
+    "status": 400,
+    "mensaje": "Errores de validación",
+    "errores": {
+        "email": "Formato de email inválido",
+        "password": "La contraseña debe tener al menos 6 caracteres"
+    }
 }
 ```
 
-- `404` — recurso no encontrado (álbum, artista, usuario, reseña, favorito)
-- `400` — regla de negocio violada (reseña duplicada, puntuación inválida, email ya en uso...)
-- `401` — no autenticado
-- `403` — autenticado pero sin permisos
+| Código | Significado |
+|---|---|
+| `400` | Validación fallida (email mal formado, campo vacío, regla de negocio violada) |
+| `401` | No autenticado (sin token JWT o token inválido) |
+| `403` | Autenticado pero sin permisos sobre el recurso (no es propietario ni ADMIN) |
+| `404` | Recurso no encontrado |
 
 ---
 
 ## Documentación
 
-- **API REST completa:** `backend/backend/src/main/java/com/musicreviews/backend/README.md`
-- **Bitácora semanal:** `docs/diario_bitacora.md`
-- **Tests unitarios:** `docs/tests_unitarios.md`
-- **Pruebas Postman y bugs resueltos:** `docs/pruebas_postman.md`
-- **Frontend (proceso, decisiones de diseño):** `docs/frontend.md`
-- **Integración frontend ↔ backend (fase 4):** `docs/integracion.md`
-- **Auditoría de seguridad y endurecimiento:** `docs/auditoria_seguridad.md`
-- **Guía de clases Tailwind:** `docs/tailwind-guide.md`
-- **Proceso de importación desde Spotify:** `docs/importacion/proceso_importacion.md`
-- **Migración de la BD a Aiven:** `docs/migracion_aiven.md`
-- **Seguridad y autenticación JWT:** `docs/seguridad_autenticacion.md`
-- **Refactorización y optimización del backend:** `docs/refactorizacion_backend.md`
-- **Referencias de diseño:** `docs/referencias/referencias.md`
-- **Diagramas:** carpeta `docs/`
+Toda la documentación técnica del proceso de desarrollo está en `docs/`. Se recomienda leerla en este orden si se desea seguir la evolución del proyecto:
+
+| Documento | Contenido |
+|---|---|
+| [`tests_unitarios.md`](docs/tests_unitarios.md) | Cobertura y convenciones de los 50 tests |
+| [`pruebas_postman.md`](docs/pruebas_postman.md) | Pruebas manuales de API + bugs documentados y resueltos |
+| [`migracion_aiven.md`](docs/migracion_aiven.md) | Migración de MySQL local a Aiven (cloud) |
+| [`seguridad_autenticacion.md`](docs/seguridad_autenticacion.md) | JWT, BCrypt, CORS, protección de credenciales |
+| [`refactorizacion_backend.md`](docs/refactorizacion_backend.md) | Optimizaciones aplicadas al backend |
+| [`frontend.md`](docs/frontend.md) | Proceso de desarrollo del frontend (fases 3 y 4) |
+| [`integracion.md`](docs/integracion.md) | Fase 4: integración frontend ↔ backend, AuthContext, bugs corregidos |
+| [`auditoria_seguridad.md`](docs/auditoria_seguridad.md) | Auditoría de seguridad y endurecimiento del backend |
+| [`validaciones_declarativas.md`](docs/validaciones_declarativas.md) | Bean Validation: anotaciones, manejador de errores y verificación |
+| [`dockerizacion.md`](docs/dockerizacion.md) | Dockerización completa: arquitectura, decisiones, problemas y soluciones |
+| [`tailwind-guide.md`](docs/tailwind-guide.md) | Catálogo de clases Tailwind utilizadas |
+| `referencias/`, `diseño/`, `importacion/` | Material de apoyo del diseño y la importación desde Spotify |
+
+API REST completa: [`backend/backend/src/main/java/com/musicreviews/backend/README.md`](backend/backend/src/main/java/com/musicreviews/backend/README.md)
+
+**Anexo:** registro cronológico personal del desarrollo (estilo bitácora) en [`docs/anexos/diario_bitacora.md`](docs/anexos/diario_bitacora.md). Mantenido como apoyo a la defensa del proyecto.
 
 ---
 
 ## Estado del proyecto
 
-- **Backend:** completado y desplegable. **50/50 tests verdes** (38 anteriores + 12 nuevos de la auditoría de seguridad). API REST funcional con JWT, **tres capas de seguridad** (autenticación + roles + verificación de propiedad), integración Spotify y Last.fm, panel admin con endpoints específicos (PATCH `/usuarios/{id}/activo`), búsqueda unificada (`?q=`), orden parametrizable (`?sort=`). Ver `docs/diario_bitacora.md` para el historial.
-- **Frontend:** 15 pantallas implementadas + integración 100% terminada con el backend (repo `musicreviews-frontend`). Fase 4 cerrada en 9 pasos + auditoría — desde AuthContext hasta panel admin funcional con CRUD de usuarios, artistas y moderación de reseñas. Ver `docs/integracion.md`.
+- **Backend completado y desplegable.** 50/50 tests verdes. API REST funcional con JWT, **tres capas de seguridad** (autenticación + roles + verificación de propiedad), validaciones declarativas (Bean Validation), integración con Spotify y Last.fm, panel admin con endpoints específicos, búsqueda unificada (`?q=`) y orden parametrizable (`?sort=`).
+- **Frontend completado.** 15 pantallas implementadas e integradas al 100% con el backend. CRUD completo de reseñas, gestión de favoritos, panel admin funcional.
+- **Stack dockerizado.** Tres contenedores (mysql + backend + frontend) orquestados con Docker Compose, persistencia mediante volúmenes nombrados, healthchecks y publicación automática de imágenes en GHCR.
 
-**Auditoría de seguridad (28/04/2026):** revisión crítica del backend antes de la defensa. Detectó y corrigió 6 vulnerabilidades de "falta de verificación de propiedad" (un usuario autenticado podía modificar recursos ajenos vía API directa). Tras el fix, todos los endpoints de modificación verifican que quien llama es **dueño del recurso o ADMIN**. Detalle completo del proceso (auditoría → análisis → mitigación → verificación → resultado) en `docs/auditoria_seguridad.md`.
+### Limitaciones conocidas
 
-**Limitaciones conocidas y documentadas honestamente** (todas con justificación de alcance del TFG): sin verificación de email, sin cambio de contraseña, sin subida real de archivos (URL como workaround), sin "seguir artista", sin orden "Mejor valorados" en catálogo (requiere agregado de reseñas), sin tests de controller con MockMvc (cobertura por tests de service + Postman manual). Ver `docs/integracion.md § 13` y `docs/auditoria_seguridad.md § 7` para la lista completa con causas.
+Documentadas honestamente con justificación de alcance:
+
+- Sin verificación de email en el registro
+- Sin cambio de contraseña ni recuperación
+- Sin subida real de archivos (URL como solución de transición)
+- Sin funcionalidad de "seguir artista"
+- Sin orden "Mejor valorados" en el catálogo (requiere agregado de reseñas a nivel de BD)
+- Sin tests de controller con `MockMvc` (cobertura mediante tests de service + verificación manual con Postman)
+- Sin HTTPS en el stack Docker (apropiado para entorno local; un despliegue público requeriría proxy reverso con certificados)
+
+Detalle completo de causas y justificaciones en [`docs/integracion.md`](docs/integracion.md), [`docs/auditoria_seguridad.md`](docs/auditoria_seguridad.md) y [`docs/dockerizacion.md`](docs/dockerizacion.md).

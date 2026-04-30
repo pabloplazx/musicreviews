@@ -29,7 +29,9 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        // localhost:5173 -> Vite dev server (npm run dev)
+        // localhost      -> nginx en Docker (puerto 80, sin sufijo)
+        config.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

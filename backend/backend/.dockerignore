@@ -1,0 +1,22 @@
+# Build artifacts
+target/
+
+# Control de versiones
+.git/
+.gitignore
+.gitattributes
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Logs y temporales
+*.log
+*.tmp
+
+# Documentación local
+HELP.md
+
+# Credenciales locales
+src/main/resources/application.properties

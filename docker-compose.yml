@@ -1,0 +1,86 @@
+# Stack completo de MusicReviews — MySQL + Backend Spring Boot + Frontend React
+# Levantar con: docker compose up --build
+# Detener con:  docker compose down
+
+services:
+
+  # =====================================================
+  # MySQL — base de datos local con datos preseed
+  # =====================================================
+  mysql:
+    image: mysql:8
+    container_name: musicreviews-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      # Host 3307 → contenedor 3306 (el 3306 del host suele estar ocupado por MySQL local)
+      - "3307:3306"
+    volumes:
+      # Persiste los datos de la BD entre reinicios del contenedor
+      - mysql_data:/var/lib/mysql
+      # Carga el seed.sql automáticamente la PRIMERA vez que arranca
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/01-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  # =====================================================
+  # Backend — Spring Boot, conecta al contenedor mysql
+  # =====================================================
+  backend:
+    # Por defecto descarga la imagen ya construida desde GHCR (rápido).
+    # Para construir localmente desde el código fuente: docker compose up --build
+    image: ghcr.io/pabloplazx/musicreviews-backend:latest
+    build:
+      context: ./backend/backend
+    container_name: musicreviews-backend
+    restart: unless-stopped
+    environment:
+      # Conexión a la BD (apunta al servicio "mysql" de la red interna de Docker)
+      SPRING_DATASOURCE_URL: 'jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true'
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      # Hibernate
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS}
+      # Credenciales de APIs externas (necesarias porque application.properties está excluido del image)
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
+      LASTFM_API_KEY: ${LASTFM_API_KEY}
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # =====================================================
+  # Frontend — React buildado por Vite, servido por nginx
+  # =====================================================
+  frontend:
+    # Por defecto descarga la imagen ya construida desde GHCR (rápido).
+    # Para construir localmente desde el código fuente: docker compose up --build
+    image: ghcr.io/pabloplazx/musicreviews-frontend:latest
+    build:
+      context: ../musicreviews-frontend
+      args:
+        VITE_API_URL: http://localhost:8080/api
+    container_name: musicreviews-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+# Volumen nombrado donde MySQL guarda sus datos
+# Persiste aunque pares y borres los contenedores
+volumes:
+  mysql_data:

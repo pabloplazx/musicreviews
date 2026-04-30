@@ -3,6 +3,7 @@ package com.musicreviews.backend.controller;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Artista;
 import com.musicreviews.backend.service.ArtistaService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -37,13 +38,13 @@ public class ArtistaController {
 
     // POST /api/artistas → crea un artista nuevo. Solo accesible por ADMIN (SecurityConfig).
     @PostMapping
-    public ResponseEntity<Artista> crear(@RequestBody Artista artista) {
+    public ResponseEntity<Artista> crear(@Valid @RequestBody Artista artista) {
         return ResponseEntity.ok(artistaService.guardar(artista));
     }
 
     // PUT /api/artistas/{id} → actualiza todos los campos de un artista. 404 si no existe.
     @PutMapping("/{id}")
-    public ResponseEntity<Artista> actualizar(@PathVariable Long id, @RequestBody Artista datos) {
+    public ResponseEntity<Artista> actualizar(@PathVariable Long id, @Valid @RequestBody Artista datos) {
         return ResponseEntity.ok(artistaService.actualizar(id, datos));
     }
 
