@@ -50,6 +50,55 @@ Enlace: https://www.figma.com/design/qxAT7DYKddqiLyuzrznqd4/Prototipo
 
 ---
 
+## Identidad de marca en el navegador
+
+Aspecto de la aplicación cuando aparece como pestaña en el navegador. Antes del trabajo de identidad, la app heredaba el placeholder de Vite (`musicreviews-frontend` como título y un favicon morado de Bolt.new que no formaba parte del sistema de diseño).
+
+### Título de la pestaña
+
+**Valor:** `MusicReviews — Reseñas musicales`
+**Fichero:** `musicreviews-frontend/index.html` (`<title>`)
+
+Decisiones:
+
+- Se escribe con guion em (`—`) y no con guion corto, alineado con la convención tipográfica que ya usa el resto de la UI (subtítulos del Hero, separadores en cards de reseña).
+- El descriptor "Reseñas musicales" actúa como subtítulo SEO: lo lee Google en la pestaña del SERP y los lectores de pantalla al cambiar de página, mejorando accesibilidad.
+- Se mantiene en español por coherencia con el resto del producto (la UI no tiene i18n).
+
+### Favicon
+
+**Fichero:** `musicreviews-frontend/public/favicon.svg`
+**Formato:** SVG vectorial (32×32 viewBox, escala perfectamente a 16×16 en pestañas y a 192×192 en marcadores móviles).
+
+Composición:
+
+| Elemento | Valor | Justificación |
+|---|---|---|
+| Fondo | Cuadrado redondeado, `#0e1310` (token `card`) | Mismo tono que el navbar y las tarjetas — el favicon "es" una mini-card |
+| Border-radius | 6 px sobre 32 px (≈ 19%) | Idéntica proporción al `--radius-card` (16/120 ≈ 13%) ajustada a la escala pequeña |
+| Símbolo | Corchea (♪) en `#48a377` (token `primary`) | Coincide con el icono que aparece junto al wordmark en el `Navbar` y con los estados vacíos de Detalle Álbum y Búsqueda |
+
+Razones para descartar alternativas:
+
+- **Vinilo concéntrico**: queda ilegible a 16×16 en pestañas — los círculos colapsan.
+- **Auriculares**: no aparece en ningún otro punto de la UI; introduciría un símbolo nuevo solo para el favicon.
+- **Solo nota sin fondo (transparente)**: el verde primary tiene poco contraste sobre el fondo blanco/gris claro de los temas claros del navegador. El fondo card oscuro garantiza visibilidad en cualquier tema.
+
+El SVG no usa filtros, gradientes ni texto: solo tres formas geométricas (`<rect>` para el cuerpo de la nota, `<path>` para la bandera y `<ellipse>` rotada para la cabeza). Esto permite que renderice correctamente sin fuentes externas y mantiene el tamaño del archivo en ~340 bytes.
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="6" fill="#0e1310"/>
+  <g fill="#48a377">
+    <rect x="15.5" y="7" width="2.5" height="16"/>
+    <path d="M18 7 Q26 9 26 16 Q24 11 18 12 Z"/>
+    <ellipse cx="12.5" cy="22.5" rx="4.5" ry="3.2" transform="rotate(-18 12.5 22.5)"/>
+  </g>
+</svg>
+```
+
+---
+
 ## Flujos de prototipo
 
 ### Conexiones activas (configuradas en Figma)
