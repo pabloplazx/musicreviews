@@ -1,5 +1,6 @@
 package com.musicreviews.backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
@@ -56,6 +57,8 @@ public class Usuario {
     private boolean activo = true;
 
     // Fecha y hora del último login. Se actualiza cada vez que el usuario inicia sesión.
+    // No se serializa en respuestas JSON — es dato interno de actividad.
+    @JsonIgnore
     @Column(name = "fecha_ultimo_login")
     private LocalDateTime fechaUltimoLogin;
 
