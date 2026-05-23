@@ -43,6 +43,10 @@ public class Album {
     @Column(columnDefinition = "TEXT")
     private String descripcion;
 
+    // ID del álbum en la API de Spotify. Se usa para recuperar la lista de canciones.
+    @Column(name = "spotify_id", length = 50)
+    private String spotifyId;
+
     // EAGER: el artista se carga siempre junto al álbum porque es necesario para mostrarlo.
     @NotNull(message = "El artista es obligatorio")
     @ManyToOne(fetch = FetchType.EAGER)

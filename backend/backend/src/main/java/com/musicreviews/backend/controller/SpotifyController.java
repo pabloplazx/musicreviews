@@ -104,4 +104,17 @@ public class SpotifyController {
             return ResponseEntity.internalServerError().body("Error al actualizar portadas: " + e.getMessage());
         }
     }
+
+    // GET /api/spotify/actualizar-ids
+    // → rellena el campo spotifyId de los álbumes que lo tienen vacío buscándolos por
+    // título + artista. Necesario para álbumes importados antes de añadir ese campo.
+    @GetMapping("/actualizar-ids")
+    public ResponseEntity<String> actualizarIds() {
+        try {
+            String resultado = spotifyService.actualizarSpotifyIds();
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error al actualizar IDs: " + e.getMessage());
+        }
+    }
 }
