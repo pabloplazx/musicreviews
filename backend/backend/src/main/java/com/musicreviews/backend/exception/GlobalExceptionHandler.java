@@ -46,6 +46,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException e) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorBody(500, e.getMessage()));
+    }
+
     private Map<String, Object> errorBody(int status, String mensaje) {
         return Map.of(
                 "timestamp", LocalDateTime.now().toString(),

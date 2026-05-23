@@ -56,7 +56,7 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Rutas públicas: registro, login y consultas de catálogo
+                // Rutas públicas: registro, login, verificación de email y refresco de token
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/artistas/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/albumes/**").permitAll()

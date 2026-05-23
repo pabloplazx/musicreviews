@@ -240,3 +240,374 @@ El flujo de login llama a `usuarioService.actualizarUltimoLogin(id)`, un método
 | Login correcto | ✅ 200 + token |
 | Ruta protegida sin token | ✅ 401 |
 | Ruta ADMIN con token USER | ✅ 403 |
+
+---
+
+## Verificación de email y refresh tokens (23/05/2026)
+
+### Motivación
+
+El sistema original registraba al usuario y le devolvía un token JWT de acceso de inmediato, sin comprobar que el email fuese válido. Cualquiera podía registrarse con el email de otra persona. Además, el token JWT tenía una ventana de expiración fija de 1 hora sin mecanismo de renovación — el usuario perdía la sesión sin poder recuperarla sin volver a hacer login.
+
+Se implementaron dos mecanismos complementarios:
+
+1. **Verificación de email**: el usuario no puede iniciar sesión hasta confirmar el correo.
+2. **Refresh tokens**: token UUID de larga duración (7 días) para renovar el JWT de acceso sin pedir credenciales.
+
+---
+
+### Nuevos archivos
+
+```
+com.musicreviews.backend/
+├── model/
+│   └── RefreshToken.java            ← Entidad JPA (token UUID, usuario, expiración)
+├── repository/
+│   └── RefreshTokenRepository.java  ← findByToken, deleteByUsuario
+└── service/
+    ├── RefreshTokenService.java     ← crear, verificar, limpiar expirados
+    └── EmailService.java            ← envío de email HTML via Brevo SMTP
+```
+
+**Dependencias añadidas en `pom.xml`:**
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-mail</artifactId>
+</dependency>
+```
+
+---
+
+### Cambios en archivos existentes
+
+| Archivo | Cambio |
+|---|---|
+| `Usuario.java` | +`emailVerificado` (boolean), +`tokenVerificacion` (String) |
+| `UsuarioService.java` | +`registrar()` con JdbcTemplate para token, +`JdbcTemplate` injection |
+| `AuthController.java` | `register` → llama a `registrar()` + `emailService.enviarConfirmacion()`, +`GET /verificar`, +`POST /refresh`, +`POST /logout` |
+| `AuthResponse.java` | + campo `refreshToken` |
+| `SecurityConfig.java` | + rutas `/api/auth/verificar` y `/api/auth/refresh` como públicas |
+| `GlobalExceptionHandler.java` | + `MailException` traducida a 503 con mensaje legible |
+| `application.properties` | + configuración SMTP Brevo, + `refresh-token.expiration-days` |
+
+---
+
+### Flujo de registro con verificación
+
+```
+Usuario → POST /api/auth/register
+  ↓
+UsuarioService.registrar()
+  ├── Valida duplicados (email, username)
+  ├── Crea Usuario con emailVerificado=false
+  ├── saveAndFlush() → Hibernate INSERT (token_verificacion = NULL)
+  └── JdbcTemplate.update("UPDATE usuario SET token_verificacion = ? WHERE id = ?", token, id)
+  ↓
+EmailService.enviarConfirmacion()
+  └── envía enlace: http://localhost:5173/verificar-email?token=<uuid>
+  ↓
+Responde: 200 { "mensaje": "Hemos enviado un correo a ..." }
+```
+
+---
+
+### Flujo de login con verificación de email
+
+```
+Usuario → POST /api/auth/login
+  ↓
+AuthController.login()
+  ├── busca usuario por email
+  ├── comprueba BCrypt
+  ├── if (!activo) → 400 "Cuenta desactivada"
+  ├── if (!emailVerificado) → 400 "Debes verificar tu email..."
+  ├── actualizarUltimoLogin()
+  ├── genera JWT (1 hora)
+  └── RefreshTokenService.crear() → genera UUID, guarda en BD con expiración 7 días
+  ↓
+Responde: 200 { accessToken, refreshToken, id, username, email, rol }
+```
+
+---
+
+### Flujo de verificación de email
+
+```
+Usuario hace click en el enlace del email
+  ↓
+VerificarEmail.jsx → GET /api/auth/verificar?token=<uuid>
+  ↓
+AuthController.verificar()
+  ├── usuarioRepository.findByTokenVerificacion(token)
+  ├── if not found → 400 "Enlace de verificación inválido o ya utilizado"
+  ├── usuario.setEmailVerificado(true)
+  ├── usuario.setTokenVerificacion(null)
+  └── usuarioRepository.save(usuario)
+  ↓
+Responde: 200 { "mensaje": "Cuenta verificada correctamente." }
+```
+
+---
+
+### Flujo de renovación de token (refresh)
+
+```
+Frontend detecta JWT expirado (401)
+  ↓
+interceptor Axios → POST /api/auth/refresh { "refreshToken": "<uuid>" }
+  ↓
+RefreshTokenService.verificar()
+  ├── findByToken
+  ├── if not found → 400 "Refresh token inválido"
+  └── if expirado → elimina + 400 "Refresh token expirado"
+  ↓
+JwtUtil.generarToken(email, rol) → nuevo JWT (1 hora)
+  ↓
+Responde: 200 { "token": "<nuevo-jwt>" }
+```
+
+---
+
+### Endpoints añadidos
+
+#### `GET /api/auth/verificar?token=<uuid>`
+
+Activa la cuenta. Público, sin autenticación.
+
+**Respuesta 200:**
+```json
+{ "mensaje": "Cuenta verificada correctamente. Ya puedes iniciar sesión." }
+```
+**Error 400:** token no encontrado o ya usado.
+
+---
+
+#### `POST /api/auth/refresh`
+
+Renueva el JWT usando un refresh token.
+
+**Body:**
+```json
+{ "refreshToken": "uuid-del-refresh-token" }
+```
+**Respuesta 200:**
+```json
+{ "token": "nuevo-jwt" }
+```
+
+---
+
+#### `POST /api/auth/logout`
+
+Invalida el refresh token en el servidor.
+
+**Body:**
+```json
+{ "refreshToken": "uuid-del-refresh-token" }
+```
+**Respuesta:** 204 No Content.
+
+---
+
+### Cambios en el frontend
+
+**`src/services/auth.js`**
+- `verificarEmail(token)` — GET `/api/auth/verificar?token=`
+- `refreshAccessToken(refreshToken)` — POST `/api/auth/refresh`
+- `logout(refreshToken)` — POST `/api/auth/logout`
+
+**`src/context/AuthContext.jsx`**
+- Guarda `refreshToken` en localStorage junto al JWT
+- Interceptor Axios: si recibe 401, intenta refresh automático antes de forzar logout
+- `logout()` llama al endpoint `/api/auth/logout` para invalidar el refresh token en servidor
+
+**`src/pages/VerificarEmail.jsx`**
+- Página nueva. Lee `?token=` de la URL y llama a `verificarEmail(token)`
+- Muestra spinner mientras verifica, éxito con enlace a login, o error con mensaje
+
+**`src/pages/Registro.jsx`**
+- Tras registro exitoso, muestra panel informando al usuario que revise su email en vez de redirigir a login directamente
+
+**`src/App.jsx`**
+- Añadida ruta `/verificar-email` → `<VerificarEmail />`
+
+---
+
+### Configuración de email (Brevo SMTP)
+
+```properties
+spring.mail.host=smtp-relay.brevo.com
+spring.mail.port=587
+spring.mail.username=ac5298001@smtp-brevo.com
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+app.mail.from=musicreviews@outlook.es
+app.url=http://localhost:5173
+```
+
+El email se envía como HTML con un botón que enlaza a `{app.url}/verificar-email?token={token}`.
+
+---
+
+## Proceso de debugging: token_verificacion siempre NULL
+
+Esta sección documenta el problema más complejo encontrado durante el desarrollo del TFG: por qué `token_verificacion` llegaba siempre como `NULL` a la base de datos pese al código aparentemente correcto.
+
+### Síntoma inicial
+
+Tras implementar el registro con verificación, todos los usuarios en la BD tenían `token_verificacion = NULL`. El email llegaba con un enlace, pero al hacer click el backend devolvía "Enlace de verificación inválido o ya utilizado" porque no encontraba ningún usuario con ese token.
+
+### Intento 1 — `@JsonIgnore`
+
+**Hipótesis:** Jackson ignoraba el campo al serializar y quizá también al persistir.
+**Resultado:** No era el problema — `@JsonIgnore` no afecta a JPA, solo a la serialización JSON.
+
+### Intento 2 — `@Modifying @Query` JPQL
+
+Se añadió un método al repositorio:
+```java
+@Modifying
+@Query("UPDATE Usuario u SET u.tokenVerificacion = :token WHERE u.id = :id")
+void setTokenVerificacion(@Param("id") Long id, @Param("token") String token);
+```
+**Resultado:** El código compilaba y no lanzaba error, pero el token seguía siendo NULL en BD.
+
+### Intento 3 — `@Modifying @Query` nativa SQL + `clearAutomatically = true`
+
+```java
+@Transactional
+@Modifying(clearAutomatically = true)
+@Query(value = "UPDATE usuario SET token_verificacion = :token WHERE id = :id", nativeQuery = true)
+void setTokenVerificacion(@Param("id") Long id, @Param("token") String token);
+```
+**Resultado:** Aparentemente el mismo resultado. La BD seguía mostrando NULL.
+
+### Intento 4 — `saveAndFlush()`
+
+**Hipótesis:** El token se establece en la entidad Java pero Hibernate no hace el flush antes de que acabe la transacción.
+
+```java
+usuario.setTokenVerificacion(token);
+usuarioRepository.saveAndFlush(usuario);
+```
+**Resultado:** NULL persiste. El flush fuerza el SQL inmediatamente, pero el problema estaba antes.
+
+### Diagnóstico: activar logging SQL
+
+Se activó el logging de parámetros de Hibernate:
+```properties
+spring.jpa.show-sql=true
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.orm.jdbc.bind=TRACE
+```
+
+El log reveló la causa raíz:
+```
+Hibernate: insert into usuario (activo,bio,email,email_verificado,fecha_ultimo_login,fecha_registro,foto_perfil,password,rol,token_verificacion,username) values (?,?,?,?,?,?,?,?,?,?,?)
+TRACE binding parameter (10:VARCHAR) <- [null]
+```
+
+**Hibernate enviaba `token_verificacion = null` en el INSERT aunque el campo estuviera seteado en Java.** El campo se marcaba en el estado JPA como "no dirty" en el momento de la inserción porque la sesión tenía un estado inconsistente al establecer el campo después de resolver el ID con `GenerationType.IDENTITY`.
+
+### Solución final — JdbcTemplate bypass
+
+En lugar de luchar con el estado interno de Hibernate, se usó `JdbcTemplate` para hacer el UPDATE directamente vía JDBC puro, completamente fuera de Hibernate:
+
+```java
+private final JdbcTemplate jdbcTemplate;
+
+@Transactional
+public String registrar(String username, String email, String encodedPassword) {
+    // Paso 1: INSERT limpio vía JPA (Hibernate envía token = null)
+    Usuario usuario = new Usuario();
+    usuario.setUsername(username);
+    usuario.setEmail(email);
+    usuario.setPassword(encodedPassword);
+    usuario.setEmailVerificado(false);
+    Usuario guardado = usuarioRepository.saveAndFlush(usuario);
+    Long userId = guardado.getId();
+
+    // Paso 2: UPDATE directo vía JDBC — bypassa Hibernate completamente
+    String token = UUID.randomUUID().toString();
+    jdbcTemplate.update(
+            "UPDATE usuario SET token_verificacion = ? WHERE id = ?",
+            token, userId
+    );
+
+    return token;
+}
+```
+
+El log confirmó que el UPDATE llegaba correctamente a la BD:
+```
+1 fila(s) afectada(s) — token = 971c9d2c-...
+```
+
+---
+
+## Proceso de debugging: doble verificación por React StrictMode
+
+### Síntoma
+
+Tras confirmar que el token se guardaba correctamente en BD, la verificación de email seguía fallando. La página mostraba "Verificación fallida — Enlace de verificación inválido o ya utilizado".
+
+### Diagnóstico
+
+Con el logging SQL activo, el log del backend mostró la secuencia exacta de SQLs durante una verificación:
+
+```
+[T+0ms]  SELECT * FROM usuario WHERE token_verificacion = '971c9d2c-...'  → encontrado ✓
+[T+2ms]  UPDATE usuario SET email_verificado=true, token_verificacion=null WHERE id=36
+[T+10ms] SELECT * FROM usuario WHERE token_verificacion = '971c9d2c-...'  → NOT FOUND ✗
+```
+
+**Dos peticiones GET `/api/auth/verificar?token=...` llegaban al backend casi simultáneamente.**
+
+- La primera: encontraba el token, lo ponía a NULL, devolvía 200 OK.
+- La segunda (10ms después): no encontraba el token (ya era NULL), devolvía 400 Error.
+
+El frontend mostraba el resultado de la segunda petición.
+
+### Causa raíz
+
+**React 18+ StrictMode invoca todos los efectos dos veces en modo desarrollo** para detectar side effects no puros. El `useEffect` de `VerificarEmail.jsx` se ejecutaba dos veces, enviando dos peticiones simultáneas al backend.
+
+### Solución — `useRef` guard
+
+```jsx
+const llamadaHecha = useRef(false);
+
+useEffect(() => {
+  // Evita la segunda llamada del StrictMode de React en desarrollo
+  if (llamadaHecha.current) return;
+  llamadaHecha.current = true;
+
+  const token = params.get("token");
+  verificarEmail(token)
+    .then(() => setEstado("ok"))
+    .catch((err) => { setEstado("error"); setMensaje(err.message); });
+}, []);
+```
+
+Un `useRef` persiste entre renders sin provocar re-renders. El flag `llamadaHecha.current` se establece a `true` en la primera ejecución, y la segunda llamada del StrictMode sale inmediatamente sin hacer la petición.
+
+---
+
+## Bug: email rechazado por Brevo (sender no verificado)
+
+### Síntoma
+
+Los primeros intentos de envío devolvieron: `"Sending has been rejected because sender plaza953pablo@gmail.com is not valid"`.
+
+### Causa
+
+Brevo exige verificar el dominio o dirección del remitente antes de permitir el envío. El email `plaza953pablo@gmail.com` no estaba verificado en la cuenta Brevo.
+
+### Solución
+
+1. Crear `musicreviews@outlook.es` como dirección de remitente en el panel de Brevo.
+2. Verificarla siguiendo el proceso de confirmación por email de Brevo.
+3. Actualizar `app.mail.from=musicreviews@outlook.es` en `application.properties`.
+
+Adicionalmente, Gmail aplicaba filtros SPF que silenciaban los emails enviados con un remitente `@gmail.com` a través de un servidor SMTP de terceros. Usar `musicreviews@outlook.es` como remitente evitó ese problema.

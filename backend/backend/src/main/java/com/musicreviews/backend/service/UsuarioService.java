@@ -6,12 +6,14 @@ import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 // Esta clase contiene la lógica de negocio relacionada con los usuarios.
 // Se encarga de validar que no haya duplicados de email o username antes de guardar.
@@ -21,6 +23,7 @@ public class UsuarioService {
 
     // final + @RequiredArgsConstructor reemplaza @Autowired. Los campos inmutables son más seguros y fáciles de testear.
     private final UsuarioRepository usuarioRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
     @Transactional(readOnly = true)
@@ -52,6 +55,37 @@ public class UsuarioService {
             throw new ReglaNegocioException("Ya existe un usuario con ese username");
         }
         return usuarioRepository.save(usuario);
+    }
+
+    // Crea un nuevo usuario y persiste su token de verificación vía JDBC directo,
+    // evitando cualquier interferencia de Hibernate con ese campo.
+    @Transactional
+    public String registrar(String username, String email, String encodedPassword) {
+        if (usuarioRepository.existsByEmail(email)) {
+            throw new ReglaNegocioException("Ya existe un usuario con ese email");
+        }
+        if (usuarioRepository.existsByUsername(username)) {
+            throw new ReglaNegocioException("Ya existe un usuario con ese username");
+        }
+
+        // Primero guardamos el usuario sin token (JPA lo inserta como NULL)
+        Usuario usuario = new Usuario();
+        usuario.setUsername(username);
+        usuario.setEmail(email);
+        usuario.setPassword(encodedPassword);
+        usuario.setEmailVerificado(false);
+
+        Usuario guardado = usuarioRepository.saveAndFlush(usuario);
+        Long userId = guardado.getId();
+
+        // Luego actualizamos el token vía JDBC puro — bypassa Hibernate completamente
+        String token = UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "UPDATE usuario SET token_verificacion = ? WHERE id = ?",
+                token, userId
+        );
+
+        return token;
     }
 
     // Verifica que el usuario autenticado solo edita su propio perfil (o es ADMIN).
