@@ -37,10 +37,11 @@ public class UsuarioController {
                 .toList();
     }
 
-    // GET /api/usuarios/{id} → busca un usuario por su ID. 404 JSON si no existe.
+    // GET /api/usuarios/{id} → busca un usuario por su ID. Devuelve solo datos públicos (sin email).
     @GetMapping("/{id}")
-    public ResponseEntity<Usuario> obtenerPorId(@PathVariable Long id) {
+    public ResponseEntity<UsuarioResumenDTO> obtenerPorId(@PathVariable Long id) {
         return ResponseEntity.ok(usuarioService.obtenerPorId(id)
+                .map(UsuarioResumenDTO::from)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado")));
     }
 

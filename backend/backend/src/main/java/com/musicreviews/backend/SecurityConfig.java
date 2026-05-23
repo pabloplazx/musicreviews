@@ -76,7 +76,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/api/albumes/**").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/usuarios").hasRole("ADMIN") // listar todos: solo ADMIN (expone emails)
                 .requestMatchers(HttpMethod.PATCH, "/api/usuarios/**").hasRole("ADMIN") // activar/desactivar cuentas
-                .requestMatchers("/api/spotify/**").permitAll()
+                .requestMatchers("/api/spotify/**").hasRole("ADMIN")
                 // Resto de rutas: usuario autenticado
                 .anyRequest().authenticated()
             )
