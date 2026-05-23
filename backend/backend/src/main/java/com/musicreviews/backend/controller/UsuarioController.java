@@ -1,5 +1,6 @@
 package com.musicreviews.backend.controller;
 
+import com.musicreviews.backend.dto.UsuarioResumenDTO;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.service.UsuarioService;
@@ -21,10 +22,19 @@ public class UsuarioController {
 
     private final UsuarioService usuarioService;
 
-    // GET /api/usuarios → devuelve la lista completa de usuarios.
+    // GET /api/usuarios → devuelve la lista completa de usuarios. Solo ADMIN.
     @GetMapping
     public List<Usuario> obtenerTodos() {
         return usuarioService.obtenerTodos();
+    }
+
+    // GET /api/usuarios/publico → lista pública de usuarios activos sin datos sensibles (email, etc.)
+    @GetMapping("/publico")
+    public List<UsuarioResumenDTO> obtenerPublicos() {
+        return usuarioService.obtenerTodos().stream()
+                .filter(Usuario::isActivo)
+                .map(UsuarioResumenDTO::from)
+                .toList();
     }
 
     // GET /api/usuarios/{id} → busca un usuario por su ID. 404 JSON si no existe.
