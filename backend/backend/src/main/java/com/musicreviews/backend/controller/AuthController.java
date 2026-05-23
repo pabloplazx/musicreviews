@@ -4,8 +4,12 @@ import com.musicreviews.backend.dto.AuthResponse;
 import com.musicreviews.backend.dto.LoginRequest;
 import com.musicreviews.backend.dto.RegisterRequest;
 import com.musicreviews.backend.exception.ReglaNegocioException;
+import com.musicreviews.backend.model.RefreshToken;
 import com.musicreviews.backend.model.Usuario;
+import com.musicreviews.backend.repository.UsuarioRepository;
 import com.musicreviews.backend.security.JwtUtil;
+import com.musicreviews.backend.service.EmailService;
+import com.musicreviews.backend.service.RefreshTokenService;
 import com.musicreviews.backend.service.UsuarioService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -13,39 +17,36 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-// Esta clase expone los endpoints de autenticación: registro y login.
-// No requiere token JWT — son las rutas de entrada al sistema.
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor // Genera el constructor con los campos final — inyección por constructor
+@RequiredArgsConstructor
 public class AuthController {
 
-    // Acceso al servicio de usuarios en lugar de al repositorio directamente,
-    // respetando la separación de capas controller → service → repository.
     private final UsuarioService usuarioService;
+    private final UsuarioRepository usuarioRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final RefreshTokenService refreshTokenService;
+    private final EmailService emailService;
 
-    // POST /api/auth/register → registra un nuevo usuario.
-    // La contraseña se hashea con BCrypt antes de guardarla.
-    // Las validaciones de duplicado las gestiona UsuarioService (lanza ReglaNegocioException → 400).
+    // POST /api/auth/register → crea la cuenta, envía email de verificación y devuelve mensaje.
+    // No inicia sesión automáticamente — el usuario debe confirmar el email primero.
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        Usuario usuario = new Usuario();
-        usuario.setUsername(request.getUsername());
-        usuario.setEmail(request.getEmail());
-        usuario.setPassword(passwordEncoder.encode(request.getPassword()));
+    public ResponseEntity<Map<String, String>> register(@Valid @RequestBody RegisterRequest request) {
+        String token = usuarioService.registrar(
+                request.getUsername(),
+                request.getEmail(),
+                passwordEncoder.encode(request.getPassword())
+        );
 
-        Usuario guardado = usuarioService.guardar(usuario);
+        emailService.enviarConfirmacion(request.getEmail(), request.getUsername(), token);
 
-        String token = jwtUtil.generarToken(guardado.getEmail(), guardado.getRol().name());
-        return ResponseEntity.ok(new AuthResponse(token, guardado.getId(), guardado.getUsername(), guardado.getEmail(), guardado.getRol().name()));
+        return ResponseEntity.ok(Map.of("mensaje", "Hemos enviado un correo a " + request.getEmail() + ". Confirma tu cuenta para iniciar sesión."));
     }
 
-    // POST /api/auth/login → autentica al usuario y devuelve un token JWT.
-    // Actualiza fechaUltimoLogin en cada inicio de sesión.
-    // Los errores se lanzan como ReglaNegocioException (400 + JSON uniforme) en lugar de devolver
-    // texto plano, para que el frontend pueda parsear siempre la respuesta como JSON.
+    // POST /api/auth/login → autentica, verifica el email y devuelve access token + refresh token.
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         Usuario usuario = usuarioService.obtenerPorEmail(request.getEmail()).orElse(null);
@@ -58,9 +59,58 @@ public class AuthController {
             throw new ReglaNegocioException("Cuenta desactivada");
         }
 
+        if (!usuario.isEmailVerificado()) {
+            throw new ReglaNegocioException("Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.");
+        }
+
         usuarioService.actualizarUltimoLogin(usuario.getId());
 
-        String token = jwtUtil.generarToken(usuario.getEmail(), usuario.getRol().name());
-        return ResponseEntity.ok(new AuthResponse(token, usuario.getId(), usuario.getUsername(), usuario.getEmail(), usuario.getRol().name()));
+        String accessToken = jwtUtil.generarToken(usuario.getEmail(), usuario.getRol().name());
+        RefreshToken refreshToken = refreshTokenService.crear(usuario.getId());
+
+        return ResponseEntity.ok(new AuthResponse(
+                accessToken, refreshToken.getToken(),
+                usuario.getId(), usuario.getUsername(), usuario.getEmail(), usuario.getRol().name()));
+    }
+
+    // GET /api/auth/verificar?token=uuid → valida el token de email y activa la cuenta.
+    // Devuelve un mensaje de éxito — el usuario inicia sesión normalmente después.
+    @GetMapping("/verificar")
+    public ResponseEntity<Map<String, String>> verificar(@RequestParam String token) {
+        Usuario usuario = usuarioRepository.findByTokenVerificacion(token)
+                .orElseThrow(() -> new ReglaNegocioException("Enlace de verificación inválido o ya utilizado"));
+
+        usuario.setEmailVerificado(true);
+        usuario.setTokenVerificacion(null);
+        usuarioRepository.save(usuario);
+
+        return ResponseEntity.ok(Map.of("mensaje", "Cuenta verificada correctamente. Ya puedes iniciar sesión."));
+    }
+
+    // POST /api/auth/refresh → intercambia un refresh token válido por un nuevo access token.
+    // Body: { "refreshToken": "uuid" }
+    @PostMapping("/refresh")
+    public ResponseEntity<Map<String, String>> refresh(@RequestBody Map<String, String> body) {
+        String tokenStr = body.get("refreshToken");
+        if (tokenStr == null || tokenStr.isBlank()) {
+            throw new ReglaNegocioException("Refresh token requerido");
+        }
+
+        RefreshToken refreshToken = refreshTokenService.verificar(tokenStr);
+        Usuario usuario = refreshToken.getUsuario();
+        String nuevoAccessToken = jwtUtil.generarToken(usuario.getEmail(), usuario.getRol().name());
+
+        return ResponseEntity.ok(Map.of("token", nuevoAccessToken));
+    }
+
+    // POST /api/auth/logout → invalida el refresh token del servidor.
+    // Body: { "refreshToken": "uuid" }
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestBody Map<String, String> body) {
+        String tokenStr = body.get("refreshToken");
+        if (tokenStr != null && !tokenStr.isBlank()) {
+            refreshTokenService.eliminar(tokenStr);
+        }
+        return ResponseEntity.noContent().build();
     }
 }

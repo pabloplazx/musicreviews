@@ -62,6 +62,15 @@ public class Usuario {
     @Column(name = "fecha_ultimo_login")
     private LocalDateTime fechaUltimoLogin;
 
+    // Indica si el usuario ha verificado su email haciendo clic en el enlace del correo de registro.
+    // Hasta que no sea true, el login queda bloqueado.
+    @Column(name = "email_verificado", nullable = false)
+    private boolean emailVerificado = false;
+
+    // UUID temporal que se envía en el correo de verificación. Se borra al verificar.
+    @Column(name = "token_verificacion")
+    private String tokenVerificacion;
+
     // Antes de guardar por primera vez, esto asigna la fecha de registro y el rol por defecto.
     @PrePersist
     public void prePersist() {

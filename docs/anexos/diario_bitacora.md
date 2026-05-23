@@ -1307,3 +1307,279 @@ Antes de presentar el TFG, revisión sistemática del backend buscando lo que un
 🔜 **Fase 5 — pendiente.** Posibles caminos: despliegue (Render/Heroku/AWS), tests de integración con MockMvc, validaciones declarativas, refresh tokens.
 
 Detalle completo del proceso de auditoría: [`auditoria_seguridad.md`](auditoria_seguridad.md).
+
+---
+
+## Semana 11 — Fase 5, sesión 1: tests de integración y mejoras transversales (01/05/2026)
+
+**Fase:** FASE 5 — funcionalidades avanzadas y cierre
+
+### Objetivo
+
+Abrir la Fase 5 con una base sólida: tests de integración con H2 en memoria, ajustes de CORS y documentar el rediseño visual y la adaptación responsive ya implementados.
+
+### Tests de integración con H2
+
+Se implementaron los primeros tests de integración usando `@SpringBootTest` + `MockMvc` y una base de datos H2 en memoria (en lugar de tocar la BD de Aiven). El perfil `test` carga un `application-test.properties` con URL H2 y `ddl-auto=create-drop`.
+
+**Cobertura añadida:**
+- `AuthControllerIntegrationTest` — registro, login correcto, login con contraseña errónea, login con cuenta inactiva.
+- `AlbumControllerIntegrationTest`, `ArtistControllerIntegrationTest`, `ResenaControllerIntegrationTest`, `UsuarioControllerIntegrationTest`, `FavoritoControllerIntegrationTest` — flujos públicos de la API (GET sin autenticación).
+- `EstadisticasControllerIntegrationTest` — endpoint de estadísticas globales.
+
+Se añadió `tests_integracion.md` al repo de docs con la descripción del setup, los tests implementados y los resultados.
+
+### CORS — método PATCH
+
+`SecurityConfig` solo permitía `GET, POST, PUT, DELETE, OPTIONS`. El endpoint `PATCH /api/usuarios/{id}/activo` del panel admin devolvía CORS error en el navegador. Se añadió `PATCH` a la lista de métodos permitidos.
+
+### Documentación del rediseño visual
+
+El rediseño premium (glassmorphism, aurora glows, animaciones) y la adaptación mobile-first ya estaban implementados en commits anteriores. Se documentaron formalmente en:
+- `docs/diseño/responsive.md` — proceso de adaptación y breakpoints.
+- `docs/integracion.md` (sección 14) — mención al sistema de identidad de marca (paleta, tipografía, favicon, título de pestaña).
+
+### Estado al cerrar la sesión
+
+✅ Tests de integración funcionando con H2.
+✅ CORS correcto para todos los métodos usados.
+✅ Documentación de diseño completada.
+
+---
+
+## Semana 12 — Fase 5, sesión 2: sistema de seguimiento social (23/05/2026)
+
+**Fase:** FASE 5 — funcionalidades avanzadas y cierre
+
+### Objetivo
+
+Añadir interacción social entre usuarios: seguir/dejar de seguir, página de Comunidad con directorio público y perfil social de cada usuario con sus seguidores/seguidos.
+
+### Backend
+
+**Entidad nueva: `Seguimiento.java`**
+
+Tabla intermedia `seguimiento` con `seguidor_id` y `seguido_id` (FKs a `usuario`). Restricción `UNIQUE` en el par para evitar duplicados. Hibernate la crea automáticamente con `ddl-auto=update`.
+
+**`SeguimientoService.java`** (nuevo):
+- `seguir(seguidorId, seguidoId)` — valida que no se siga a sí mismo, que no exista ya el seguimiento, crea la entidad y guarda.
+- `dejarDeSeguir(seguidorId, seguidoId)` — elimina el registro si existe.
+- `obtenerSeguidores(usuarioId)` — devuelve lista de seguidores.
+- `obtenerSeguidos(usuarioId)` — devuelve lista de seguidos.
+- `estaSiguiendo(seguidorId, seguidoId)` — boolean para mostrar el botón correcto en el frontend.
+
+**`SeguimientoController.java`** (nuevo): endpoints `/api/seguimientos/*`.
+
+**`GET /api/usuarios` (público)**: se añadió un endpoint nuevo `UsuarioController.listarPublico()` que devuelve todos los usuarios como `UsuarioResumenDTO` (sin datos sensibles). Usado por la página de Comunidad.
+
+**Auditoría de seguridad Fase 5** (commit `d184fc5`):
+
+Durante la implementación se detectaron y corrigieron tres problemas:
+
+- **C1 — Endpoints Spotify sin autenticación**: `GET /api/spotify/**` tenía `permitAll()`. Un usuario anónimo podía disparar importaciones masivas agotando la cuota. Cambiado a `.hasRole("ADMIN")`.
+- **C2 — `GET /api/usuarios/{id}` exponía datos sensibles**: devolvía el objeto `Usuario` completo (incluyendo email) sin autenticación. Ahora devuelve `UsuarioResumenDTO` (solo `id`, `username`, `fotoPerfil`).
+- **C3 — Endpoint de estadísticas admin sin protección**: `GET /api/estadisticas` era público. Cambiado a `.authenticated()`.
+
+Falso positivo descartado: `JdbcTemplate` en `UsuarioService` fue revisado — usa consultas parametrizadas (`?`), no concatenación de strings, por lo que no hay riesgo de SQL injection.
+
+Detalle completo: [`auditoria_seguridad_fase5.md`](../auditoria_seguridad_fase5.md).
+
+### Frontend
+
+**`src/services/seguimiento.js`** — funciones `seguir`, `dejarDeSeguir`, `obtenerSeguidores`, `obtenerSeguidos`, `estaSiguiendo`.
+
+**`src/pages/Comunidad.jsx`** — directorio de usuarios con buscador por username, tarjetas con foto y bio, y sugerencias "Sugeridos para ti" (usuarios más seguidos que aún no sigues).
+
+**`src/pages/PerfilUsuario.jsx`** — perfil público de un usuario con sus reseñas recientes, contadores de seguidores/seguidos y botón seguir/dejar de seguir.
+
+**Rutas añadidas en `App.jsx`:** `/comunidad` y `/usuarios/:username`.
+
+### Estado al cerrar la sesión
+
+✅ Sistema de seguimiento completo (backend + frontend).
+✅ Página Comunidad funcional con buscador.
+✅ Perfil de usuario con red social.
+✅ Auditoría Fase 5 con 3 hallazgos corregidos.
+
+Detalle técnico completo: [`interaccion_social.md`](../interaccion_social.md).
+
+---
+
+## Semana 13 — Fase 5, sesión 3: listado de canciones desde Spotify (23/05/2026)
+
+**Fase:** FASE 5 — funcionalidades avanzadas y cierre
+
+### Objetivo
+
+Mostrar la lista completa de canciones de cada álbum directamente desde la API de Spotify, con enlace a cada canción y al álbum en Spotify.
+
+### Backend
+
+**`Album.java`** — campo nuevo `spotifyId` (`VARCHAR(50)`, columna `spotify_id`). Hibernate lo crea automáticamente con `ddl-auto=update`.
+
+**`SpotifyService.getCanciones(Long albumId)`** — método nuevo:
+1. Carga el álbum por ID.
+2. Si no tiene `spotifyId`, busca en Spotify por `título + nombre artista`, guarda el ID y continúa.
+3. Llama a `GET /v1/albums/{spotifyId}/tracks?limit=50`.
+4. Devuelve `{ tracks: [{numero, nombre, duracionMs, spotifyUrl}], albumUrl }`.
+
+**`importarArtistaPorId()`** — actualizado para guardar el `spotifyId` de cada álbum en el momento de la importación.
+
+**`GET /api/spotify/canciones/{albumId}`** — endpoint nuevo (requiere `ADMIN`).
+
+**`GET /api/albumes/{id}/canciones`** — endpoint público para que el frontend pueda pedir las canciones sin autenticación.
+
+### Frontend
+
+**`src/services/spotify.js`** — función `getCanciones(albumId)`.
+
+**`src/pages/DetalleAlbum.jsx`** — sección nueva que muestra la lista de canciones con número de pista, duración formateada y enlace a Spotify. Si el álbum no tiene canciones (no está en Spotify), muestra un banner explicativo.
+
+**Corrección CORS** (commit `87475f1`): Vite asigna puertos dinámicamente (5174, 5175, 5176…) cuando 5173 está ocupado. Se amplió la lista de orígenes permitidos en `SecurityConfig` para incluir los puertos habituales.
+
+### Estado al cerrar la sesión
+
+✅ Lista de canciones visible en detalle de álbum.
+✅ Enlace directo a cada canción y al álbum en Spotify.
+✅ CORS robusto para puertos de Vite.
+
+Detalle técnico completo: [`canciones_spotify.md`](../canciones_spotify.md).
+
+---
+
+## Semana 14 — Fase 5, sesión 4: verificación de email y refresh tokens (23/05/2026)
+
+**Fase:** FASE 5 — funcionalidades avanzadas y cierre
+
+### Objetivo
+
+Implementar dos mejoras de seguridad pendientes desde el cierre de Fase 4:
+
+1. **Verificación de email**: el usuario no puede iniciar sesión hasta confirmar su dirección de email.
+2. **Refresh tokens**: renovación automática del JWT sin pedir credenciales de nuevo.
+
+Esta sesión fue la más compleja del proyecto en términos de debugging. A continuación se documenta el proceso completo incluyendo todos los errores encontrados y cómo se resolvieron.
+
+---
+
+### Implementación — refresh tokens
+
+Se creó la entidad `RefreshToken` (UUID único, FK a `usuario`, `LocalDateTime expiresAt`). `RefreshTokenService` gestiona creación, verificación y limpieza de tokens expirados. Al hacer login, el backend devuelve ahora dos tokens: el JWT de acceso (1 hora) y el refresh token UUID (7 días).
+
+El frontend guarda ambos en `localStorage`. Un interceptor Axios detecta respuestas 401, intenta renovar el JWT con `POST /api/auth/refresh { refreshToken }`, y si tiene éxito reintenta la petición original. Si el refresh también falla, hace logout automático.
+
+---
+
+### Implementación — verificación de email
+
+Se añadieron los campos `emailVerificado` (boolean, default `false`) y `tokenVerificacion` (String) a `Usuario`. Al registrarse, el usuario recibe un email HTML con un botón de confirmación. Solo puede hacer login una vez que `emailVerificado = true`. El endpoint `GET /api/auth/verificar?token=<uuid>` activa la cuenta y borra el token.
+
+---
+
+### Error 1: `token_verificacion` siempre NULL en la base de datos
+
+**Síntoma:** Todos los usuarios nuevos tenían `token_verificacion = NULL` en Aiven. El email llegaba con un token en el enlace, pero el backend no lo encontraba en BD.
+
+**Intentos fallidos:**
+- Eliminar `@JsonIgnore` del campo — no era el problema, Jackson no afecta a JPA.
+- `@Modifying @Query` JPQL — compilaba sin errores, BD seguía con NULL.
+- `@Modifying(clearAutomatically = true) @Query(nativeQuery = true)` — mismo resultado.
+- `saveAndFlush()` antes de generar el token — el flush era correcto pero el problema estaba en el INSERT.
+
+**Diagnóstico:** Se activó el logging de parámetros de Hibernate:
+```properties
+logging.level.org.hibernate.SQL=DEBUG
+logging.level.org.hibernate.orm.jdbc.bind=TRACE
+```
+
+El log reveló que Hibernate enviaba `token_verificacion = null` en el propio INSERT:
+```
+binding parameter (10:VARCHAR) <- [null]
+```
+
+**Causa raíz:** Con `GenerationType.IDENTITY`, Hibernate hace el INSERT para obtener el ID generado por la BD. El estado de la sesión JPA en ese punto marcaba `tokenVerificacion` como no-dirty incluso si se había seteado antes del save. El campo llegaba como NULL al INSERT independientemente del código Java.
+
+**Solución:** Usar `JdbcTemplate` para hacer un UPDATE directo con JDBC puro, fuera de Hibernate, inmediatamente después del `saveAndFlush()`:
+
+```java
+Usuario guardado = usuarioRepository.saveAndFlush(usuario);
+String token = UUID.randomUUID().toString();
+jdbcTemplate.update(
+    "UPDATE usuario SET token_verificacion = ? WHERE id = ?",
+    token, guardado.getId()
+);
+```
+
+El log confirmó la solución: `1 fila(s) afectada(s)`.
+
+---
+
+### Error 2: verificación fallida incluso con el token correcto en BD
+
+**Síntoma:** Tras confirmar que el token se guardaba en BD (SELECT manual mostraba el valor correcto), al hacer click en el enlace del email la página seguía mostrando "Verificación fallida — Enlace de verificación inválido o ya utilizado".
+
+**Diagnóstico:** El log SQL del backend durante una verificación mostró:
+
+```
+[T+0ms]  SELECT usuario WHERE token_verificacion = '971c9d2c-...'  → FOUND ✓
+[T+2ms]  UPDATE usuario SET email_verificado=true, token_verificacion=null
+[T+10ms] SELECT usuario WHERE token_verificacion = '971c9d2c-...'  → NOT FOUND ✗
+```
+
+Llegaban **dos peticiones GET `/api/auth/verificar`** con el mismo token, separadas por ~10ms.
+
+**Causa raíz:** **React 18+ StrictMode invoca todos los `useEffect` dos veces en modo desarrollo** para detectar side effects no puros. `VerificarEmail.jsx` hacía la llamada al backend dentro de un `useEffect`, por lo que se enviaban dos peticiones simultáneas:
+- Primera: token encontrado → activa cuenta → borra token.
+- Segunda: token ya NULL → "Enlace inválido".
+
+El frontend mostraba el resultado de la segunda.
+
+**Solución:** Añadir un `useRef` como guard al `useEffect`:
+
+```jsx
+const llamadaHecha = useRef(false);
+
+useEffect(() => {
+  if (llamadaHecha.current) return;
+  llamadaHecha.current = true;
+  // petición al backend
+}, []);
+```
+
+`useRef` persiste entre renders sin provocar re-renders, por lo que la segunda invocación del StrictMode encuentra el flag a `true` y sale inmediatamente.
+
+---
+
+### Error 3: email no llega / rechazado por Brevo
+
+**Primer intento:** remitente `plaza953pablo@gmail.com` → Brevo rechazaba el envío con `"sender is not valid"` (el email no estaba verificado en Brevo).
+
+**Segundo intento:** verificar `plaza953pablo@gmail.com` en Brevo → los emails llegaban a spam o se silenciaban silenciosamente porque Gmail aplica filtros SPF cuando el mismo dominio `@gmail.com` se usa como remitente en un servidor SMTP de terceros.
+
+**Solución definitiva:** crear y verificar `musicreviews@outlook.es` como remitente en el panel de Brevo. Actualizar `app.mail.from` en `application.properties`. Configurar la cuenta Outlook con el alias para poder recibir respuestas.
+
+---
+
+### Pruebas manuales realizadas
+
+| Caso | Resultado |
+|---|---|
+| Registro nuevo → email recibido en ~5s | ✅ |
+| Email contiene botón con token correcto | ✅ |
+| Click en botón → `/verificar-email?token=...` | ✅ |
+| Página muestra spinner mientras verifica | ✅ |
+| Cuenta activada → página muestra "¡Cuenta verificada!" | ✅ |
+| Login sin verificar email | ✅ 400 "Debes verificar tu email" |
+| Login con email verificado | ✅ 200 + JWT + refreshToken |
+| Segundo click en el mismo enlace | ✅ "Enlace inválido o ya utilizado" |
+| JWT expira → interceptor usa refreshToken → reintenta | ✅ |
+| Logout → refreshToken invalidado en servidor | ✅ |
+| Registro con email ya existente | ✅ 400 "Ya existe un usuario con ese email" |
+
+### Estado al cerrar la sesión
+
+✅ **Fase 5 cerrada al 100%.** Verificación de email y refresh tokens funcionando.
+✅ Tres capas de debugging resueltas (Hibernate NULL, React StrictMode, Brevo sender).
+✅ Sistema completo: registro → email → verificación → login → JWT + refresh → renovación automática → logout.
+
+Detalle técnico completo (incluyendo el proceso de debugging): [`seguridad_autenticacion.md`](../seguridad_autenticacion.md).

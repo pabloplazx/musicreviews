@@ -18,5 +18,23 @@ server.port=8080
 # La clave secreta debe tener mínimo 32 caracteres (se usa para firmar los tokens con HMAC-SHA512)
 # Genera una clave segura y no la compartas ni la subas a GitHub
 jwt.secret=TU_CLAVE_SECRETA_MINIMO_32_CARACTERES
-# Tiempo de expiración del token en milisegundos (86400000 = 24 horas)
-jwt.expiration-ms=86400000
+# Tiempo de expiración del access token en milisegundos (3600000 = 1 hora)
+# Los refresh tokens duran más y se renuevan automáticamente desde el frontend
+jwt.expiration-ms=3600000
+
+# Refresh tokens
+# Días de validez del refresh token (se renueva en cada login)
+refresh-token.expiration-days=7
+
+# Email (Gmail con App Password)
+# En Gmail: Ajustes → Seguridad → Verificación en 2 pasos → Contraseñas de aplicación
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=tu_email@gmail.com
+spring.mail.password=xxxx_xxxx_xxxx_xxxx
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
+
+# URL del frontend (se usa en el enlace del email de verificación)
+# Desarrollo: http://localhost:5173  |  Producción: https://zentimes.es
+app.url=http://localhost:5173
