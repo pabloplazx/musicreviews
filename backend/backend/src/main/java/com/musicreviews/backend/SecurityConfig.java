@@ -62,6 +62,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/albumes/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/resenas/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/estadisticas/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/usuarios/publico").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/usuarios/username/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/usuarios/*/seguidores").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/usuarios/*/siguiendo").permitAll()
