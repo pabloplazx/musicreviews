@@ -354,6 +354,7 @@ public class SpotifyService {
                 album.setFechaLanzamiento(parsearFecha((String) albumSpotify.get("release_date")));
                 album.setGenero(genero);
                 album.setArtista(artista);
+                album.setSpotifyId((String) albumSpotify.get("id"));
                 albumRepository.save(album);
                 titulosExistentes.add(titulo.toLowerCase());
                 contador++;
@@ -613,6 +614,113 @@ public class SpotifyService {
             }
         }
         return "Portadas actualizadas para " + actualizados + " álbumes.";
+    }
+
+    // Devuelve las canciones y la URL del álbum en Spotify.
+    // Si el álbum no tiene spotifyId, lo busca por título + artista y lo guarda.
+    // Respuesta: { tracks: [{numero, nombre, duracionMs, spotifyUrl}], albumUrl: String }
+    public Map<String, Object> getCanciones(Long albumId) {
+        Album album = albumRepository.findById(albumId)
+                .orElseThrow(() -> new RuntimeException("Álbum no encontrado: " + albumId));
+
+        String spotifyId = album.getSpotifyId();
+
+        if (spotifyId == null || spotifyId.isBlank()) {
+            final String query = album.getTitulo() + " " + album.getArtista().getNombre();
+            Map busqueda = spotifyGet(() -> spotifyClient.get()
+                    .uri(b -> b.path("/v1/search")
+                            .queryParam("q", query)
+                            .queryParam("type", "album")
+                            .queryParam("limit", 1)
+                            .build())
+                    .header("Authorization", "Bearer " + obtenerToken())
+                    .retrieve()
+                    .onStatus(s -> s.value() == 429, this::manejarRateLimit)
+                    .onStatus(s -> s.value() == 401, r -> Mono.error(new RuntimeException("TOKEN_EXPIRED")))
+                    .bodyToMono(Map.class)
+                    .block());
+
+            List<Map> items = (List<Map>) ((Map) busqueda.get("albums")).get("items");
+            if (items != null && !items.isEmpty()) {
+                spotifyId = (String) items.get(0).get("id");
+                album.setSpotifyId(spotifyId);
+                albumRepository.save(album);
+            }
+        }
+
+        if (spotifyId == null || spotifyId.isBlank()) {
+            Map<String, Object> vacio = new LinkedHashMap<>();
+            vacio.put("tracks", List.of());
+            vacio.put("albumUrl", null);
+            return vacio;
+        }
+
+        final String sid = spotifyId;
+        Map response = spotifyGet(() -> spotifyClient.get()
+                .uri("/v1/albums/" + sid + "/tracks?limit=50")
+                .header("Authorization", "Bearer " + obtenerToken())
+                .retrieve()
+                .onStatus(s -> s.value() == 429, this::manejarRateLimit)
+                .onStatus(s -> s.value() == 401, r -> Mono.error(new RuntimeException("TOKEN_EXPIRED")))
+                .bodyToMono(Map.class)
+                .block());
+
+        List<Map> tracks = (List<Map>) response.get("items");
+
+        List<Map<String, Object>> trackList = tracks == null ? List.of() : tracks.stream()
+                .map(track -> {
+                    Map<String, Object> cancion = new LinkedHashMap<>();
+                    cancion.put("numero", track.get("track_number"));
+                    cancion.put("nombre", track.get("name"));
+                    cancion.put("duracionMs", track.get("duration_ms"));
+                    Map<String, String> urls = (Map<String, String>) track.get("external_urls");
+                    if (urls != null) cancion.put("spotifyUrl", urls.get("spotify"));
+                    return cancion;
+                })
+                .toList();
+
+        Map<String, Object> resultado = new LinkedHashMap<>();
+        resultado.put("tracks", trackList);
+        resultado.put("albumUrl", "https://open.spotify.com/album/" + sid);
+        return resultado;
+    }
+
+    // Rellena el campo spotifyId de los álbumes que lo tienen vacío buscándolos por título + artista.
+    public String actualizarSpotifyIds() {
+        List<Album> sinId = albumRepository.findAll().stream()
+                .filter(a -> a.getSpotifyId() == null || a.getSpotifyId().isBlank())
+                .toList();
+
+        int actualizados = 0;
+        for (Album album : sinId) {
+            try {
+                final String query = album.getTitulo() + " " + album.getArtista().getNombre();
+                Map busqueda = spotifyGet(() -> spotifyClient.get()
+                        .uri(b -> b.path("/v1/search")
+                                .queryParam("q", query)
+                                .queryParam("type", "album")
+                                .queryParam("limit", 1)
+                                .build())
+                        .header("Authorization", "Bearer " + obtenerToken())
+                        .retrieve()
+                        .onStatus(s -> s.value() == 429, this::manejarRateLimit)
+                        .onStatus(s -> s.value() == 401, r -> Mono.error(new RuntimeException("TOKEN_EXPIRED")))
+                        .bodyToMono(Map.class)
+                        .block());
+
+                List<Map> items = (List<Map>) ((Map) busqueda.get("albums")).get("items");
+                if (items != null && !items.isEmpty()) {
+                    album.setSpotifyId((String) items.get(0).get("id"));
+                    albumRepository.save(album);
+                    actualizados++;
+                    System.out.println("SpotifyId actualizado: " + album.getTitulo());
+                }
+                sleep(1);
+            } catch (Exception e) {
+                System.out.println("Error con " + album.getTitulo() + ": " + e.getMessage());
+            }
+        }
+        return "SpotifyIds actualizados: " + actualizados + " de " + sinId.size() + " álbumes sin ID.";
     }
 
     // Convierte la fecha de Spotify a LocalDate.

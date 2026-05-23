@@ -3,6 +3,7 @@ package com.musicreviews.backend.controller;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
 import com.musicreviews.backend.model.Album;
 import com.musicreviews.backend.service.AlbumService;
+import com.musicreviews.backend.service.SpotifyService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -12,6 +13,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 // Esta clase expone los endpoints REST relacionados con los álbumes.
 // La ruta base de todos sus endpoints es /api/albumes.
 @RestController
@@ -20,6 +23,7 @@ import org.springframework.web.bind.annotation.*;
 public class AlbumController {
 
     private final AlbumService albumService;
+    private final SpotifyService spotifyService;
 
     // GET /api/albumes → devuelve álbumes paginados.
     // Acepta ?q= (búsqueda unificada en título o artista), ?titulo= (solo título),
@@ -77,5 +81,12 @@ public class AlbumController {
     public ResponseEntity<Void> eliminar(@PathVariable Long id) {
         albumService.eliminar(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // GET /api/albumes/{id}/canciones → devuelve canciones + URL del álbum en Spotify.
+    // Endpoint público (permitAll en SecurityConfig para GET /api/albumes/**).
+    @GetMapping("/{id}/canciones")
+    public ResponseEntity<Map<String, Object>> getCanciones(@PathVariable Long id) {
+        return ResponseEntity.ok(spotifyService.getCanciones(id));
     }
 }
