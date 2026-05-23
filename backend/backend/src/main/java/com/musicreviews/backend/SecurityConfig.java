@@ -34,6 +34,9 @@ public class SecurityConfig {
         // zentimes.es    -> producción
         config.setAllowedOrigins(List.of(
             "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:5175",
+            "http://localhost:5176",
             "http://localhost",
             "https://zentimes.es",
             "https://www.zentimes.es"

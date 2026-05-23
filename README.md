@@ -250,7 +250,7 @@ Toda la documentación técnica del proceso de desarrollo está en `docs/`. Se r
 | [`migracion_aiven.md`](docs/migracion_aiven.md) | Migración de MySQL local a Aiven (cloud) |
 | [`seguridad_autenticacion.md`](docs/seguridad_autenticacion.md) | JWT, BCrypt, CORS, protección de credenciales |
 | [`refactorizacion_backend.md`](docs/refactorizacion_backend.md) | Optimizaciones aplicadas al backend |
-| [`frontend.md`](docs/frontend.md) | Proceso de desarrollo del frontend (fases 3 y 4) |
+| [`frontend.md`](docs/frontend.md) | Proceso de desarrollo del frontend (fases 3 y 4) — arquitectura completa en [`musicreviews-frontend/docs/frontend.md`](https://github.com/pabloplazx/musicreviews-frontend/blob/main/docs/frontend.md) |
 | [`integracion.md`](docs/integracion.md) | Fase 4: integración frontend ↔ backend, AuthContext, bugs corregidos |
 | [`auditoria_seguridad.md`](docs/auditoria_seguridad.md) | Auditoría de seguridad y endurecimiento del backend |
 | [`validaciones_declarativas.md`](docs/validaciones_declarativas.md) | Bean Validation: anotaciones, manejador de errores y verificación |
@@ -267,17 +267,21 @@ API REST completa: [`backend/backend/src/main/java/com/musicreviews/backend/READ
 ## Estado del proyecto
 
 - **Backend completado y desplegable.** 50/50 tests verdes. API REST funcional con JWT, **tres capas de seguridad** (autenticación + roles + verificación de propiedad), validaciones declarativas (Bean Validation), integración con Spotify y Last.fm, panel admin con endpoints específicos, búsqueda unificada (`?q=`) y orden parametrizable (`?sort=`).
-- **Frontend completado.** 15 pantallas implementadas e integradas al 100% con el backend. CRUD completo de reseñas, gestión de favoritos, panel admin funcional.
+- **Frontend rediseñado (Fase 5).** 15 pantallas con nuevo design system premium: glassmorphism, aurora glows, animaciones y micro-interacciones. CRUD completo de reseñas, gestión de favoritos, panel admin funcional. Desplegado en [zentimes.es](https://zentimes.es).
 - **Stack dockerizado.** Tres contenedores (mysql + backend + frontend) orquestados con Docker Compose, persistencia mediante volúmenes nombrados, healthchecks y publicación automática de imágenes en GHCR.
+
+### Mejoras en desarrollo (Fase 5)
+
+- 🔄 Verificación de email en el registro (token UUID + JavaMailSender)
+- 🔄 Refresh tokens (access token corto + refresh token revocable en BD)
+- 🔄 Sistema de seguimiento entre usuarios — tabla `usuario_seguimiento` + endpoints REST
 
 ### Limitaciones conocidas
 
 Documentadas honestamente con justificación de alcance:
 
-- Sin verificación de email en el registro
 - Sin cambio de contraseña ni recuperación
 - Sin subida real de archivos (URL como solución de transición)
-- Sin funcionalidad de "seguir artista"
 - Sin orden "Mejor valorados" en el catálogo (requiere agregado de reseñas a nivel de BD)
 - Sin tests de controller con `MockMvc` (cobertura mediante tests de service + verificación manual con Postman)
 - Sin HTTPS en el stack Docker (apropiado para entorno local; un despliegue público requeriría proxy reverso con certificados)
