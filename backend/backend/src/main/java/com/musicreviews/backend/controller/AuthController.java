@@ -1,8 +1,10 @@
 package com.musicreviews.backend.controller;
 
 import com.musicreviews.backend.dto.AuthResponse;
+import com.musicreviews.backend.dto.ForgotPasswordRequest;
 import com.musicreviews.backend.dto.LoginRequest;
 import com.musicreviews.backend.dto.RegisterRequest;
+import com.musicreviews.backend.dto.ResetPasswordRequest;
 import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.RefreshToken;
 import com.musicreviews.backend.model.Usuario;
@@ -101,6 +103,27 @@ public class AuthController {
         String nuevoAccessToken = jwtUtil.generarToken(usuario.getEmail(), usuario.getRol().name());
 
         return ResponseEntity.ok(Map.of("token", nuevoAccessToken));
+    }
+
+    // POST /api/auth/forgot-password → genera token de reset y envía el correo.
+    // Siempre devuelve 200 aunque el email no exista — evita enumerar cuentas.
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        try {
+            String token = usuarioService.generarTokenReset(request.getEmail());
+            Usuario usuario = usuarioService.obtenerPorEmail(request.getEmail()).orElseThrow();
+            emailService.enviarRestablecimiento(request.getEmail(), usuario.getUsername(), token);
+        } catch (Exception ignored) {
+            // No revelamos si el email existe o no
+        }
+        return ResponseEntity.ok(Map.of("mensaje", "Si existe una cuenta con ese email, recibirás un enlace para restablecer tu contraseña."));
+    }
+
+    // POST /api/auth/reset-password → valida el token y actualiza la contraseña.
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        usuarioService.restablecerPassword(request.getToken(), request.getNuevaPassword());
+        return ResponseEntity.ok(Map.of("mensaje", "Contraseña actualizada correctamente. Ya puedes iniciar sesión."));
     }
 
     // POST /api/auth/logout → invalida el refresh token del servidor.
