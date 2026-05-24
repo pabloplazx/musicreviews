@@ -578,3 +578,150 @@ Documento completo del proceso: [`auditoria_seguridad.md`](auditoria_seguridad.m
 ### Pendiente al cerrar la sesión 1
 
 Pasos 3 al 9 del plan. El paso 3 (Navbar dinámico) es el siguiente: primera vez que el contexto se usa fuera de los formularios de auth.
+
+---
+
+## Fase 6 — Mejoras de producto (24/05/2026)
+
+Sesión de mejoras incrementales sobre la aplicación ya completada: restablecimiento de contraseña por email, tab "Siguiendo" en Comunidad, y subida real de foto de perfil sustituyendo el workaround de URL.
+
+---
+
+### Comunidad — tab "Siguiendo" con reseñas recientes
+
+**Motivación:** la página Comunidad solo tenía un directorio de usuarios. No mostraba contenido de las personas a las que el usuario sigue, lo que hacía que la sección social no tuviese utilidad una vez encontrados los perfiles.
+
+**Cambio:** se añadió un sistema de pestañas en la cabecera de `Comunidad.jsx`:
+
+| Pestaña | Visibilidad | Contenido |
+|---|---|---|
+| **Todos** | Siempre | Directorio completo (sugeridos + búsqueda + grid de usuarios) |
+| **Siguiendo** | Solo si hay sesión | Usuarios seguidos con sus reseñas recientes |
+
+**Implementación de la pestaña "Siguiendo":**
+
+- `pestana` state: `"todos"` o `"siguiendo"`.
+- El tab aparece condicionalmente en el DOM solo si `usuario !== null` (sin sesión, la sección social no tiene sentido).
+- Para cada usuario seguido se muestra:
+  - Cabecera con avatar, nombre y botón "✓ Siguiendo" (se vuelve rojo `"✗ Dejar de seguir"` al hacer hover).
+  - Hasta 3 `ResenaCard` de sus reseñas más recientes.
+  - Divisor visual entre usuarios.
+- `resenasMapa` es un objeto `{ [userId]: resena[] }` que se carga en un segundo `useEffect` que se dispara cuando cambia `siguiendoLista`.
+- Estado vacío si el usuario no sigue a nadie: ilustración y CTA para explorar la pestaña "Todos".
+
+```jsx
+// Cargar las reseñas de cada usuario seguido
+useEffect(() => {
+  if (siguiendoLista.length === 0) return;
+  Promise.all(
+    siguiendoLista.map((u) =>
+      getResenasPorUsuario(u.id, 0, 3).then((page) => [u.id, page.content ?? []])
+    )
+  ).then((pares) => setResenasMapa(Object.fromEntries(pares)));
+}, [siguiendoLista]);
+```
+
+`handleSeguirToggle` actualiza tanto `siguiendoIds` (Set de IDs para el botón de estado) como `siguiendoLista` (array de objetos para la pestaña "Siguiendo"), de forma que el UI responde inmediatamente sin refrescar la página.
+
+---
+
+### Subida real de foto de perfil
+
+**Motivación:** `EditarPerfil` permitía introducir la foto de perfil como URL pública, lo que era poco usable — los usuarios no tienen URLs de imágenes a mano. Se reemplazó por un selector de archivo real con preview.
+
+**Cambios en `EditarPerfil.jsx`:**
+
+- Eliminado el input de texto de URL.
+- `inputFotoRef` → referencia a un `<input type="file" accept="image/*" className="hidden">`.
+- El avatar es ahora un botón (click dispara `inputFotoRef.current.click()`).
+- Overlay "📷 Cambiar" que aparece al hacer hover sobre el avatar.
+- `handleSeleccionarFoto`: valida `file.type.startsWith("image/")` y `file.size ≤ 5 MB`. Si pasa, establece `previewFoto` con `URL.createObjectURL(file)` para preview inmediato.
+- `handleGuardar`: si hay `archivoFoto`, llama a `subirFotoPerfil(id, file, token)` antes de `actualizarUsuario`. La respuesta devuelve `{ fotoPerfil: "/uploads/fotos/xxx.jpg" }` que se guarda como `fotoFinal`.
+- `previewFoto` **no se limpia tras guardar**: el blob URL sigue siendo válido en la sesión y el usuario ve su foto inmediatamente sin esperar a que el proxy de `/uploads/` esté disponible.
+
+**`services/usuarios.js` — `subirFotoPerfil`:**
+
+```js
+export async function subirFotoPerfil(id, file, token) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API}/usuarios/${id}/foto`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    // SIN Content-Type: el navegador lo pone solo con el boundary correcto
+    body: form,
+  });
+  if (!res.ok) throw new Error((await res.json()).mensaje ?? "Error al subir la foto");
+  return res.json();
+}
+```
+
+**Utilidad `src/utils/uploads.js` — `resolveUploadUrl`:**
+
+```js
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace("/api", "");
+
+export function resolveUploadUrl(url) {
+  if (!url) return null;
+  if (url.startsWith("/uploads/")) return `${API_BASE}${url}`;
+  return url; // URL externa (Spotify CDN, etc.) → sin cambios
+}
+```
+
+Convierte rutas relativas `/uploads/fotos/xxx.jpg` en URLs absolutas apuntando al backend (`http://localhost:8080/uploads/...` en dev, `https://zentimes.es/uploads/...` en prod). Aplicada en todos los sitios donde se muestra foto de perfil: `Navbar`, `ResenaCard`, `PerfilUsuario`, `Busqueda`, `DetalleAlbum`.
+
+**`vite.config.js` — proxy en desarrollo:**
+
+```js
+server: {
+  proxy: {
+    '/uploads': 'http://localhost:8080'
+  }
+}
+```
+
+Permite que las peticiones a `/uploads/...` durante `npm run dev` se reenvíen al backend Spring Boot en lugar de buscar el archivo en el servidor de Vite.
+
+---
+
+### Bugs encontrados y corregidos
+
+#### Bug: foto de perfil bloqueada por SecurityConfig (403)
+
+**Síntoma:** las imágenes de foto de perfil mostraban icono de imagen rota en el navegador. El backend devolvía 403 para las peticiones GET a `/uploads/**`.
+
+**Causa:** `anyRequest().authenticated()` en `SecurityConfig` requería JWT para todas las rutas no listadas explícitamente. Los elementos `<img>` del navegador hacen peticiones HTTP directas sin cabecera `Authorization`, así que el backend rechazaba con 403 cualquier imagen de perfil, independientemente de si el usuario estaba logueado.
+
+**Solución:**
+
+```java
+.requestMatchers("/uploads/**").permitAll()
+// añadido antes de .anyRequest().authenticated()
+```
+
+---
+
+#### Bug: URI de archivo inválida en Windows (WebConfig)
+
+**Síntoma:** las imágenes de `/uploads/` devolvían 404 desde el servidor de Spring Boot pese a que el archivo existía en disco. El error en logs era `IllegalArgumentException: Invalid URI`.
+
+**Causa:** `WebConfig.addResourceHandlers` construía la URI de la siguiente forma:
+
+```java
+String rutaAbsoluta = Paths.get(uploadDir).toAbsolutePath().normalize().toString();
+registry.addResourceHandler("/uploads/**")
+        .addResourceLocations("file:" + rutaAbsoluta + "/");
+```
+
+En Windows, `toString()` devuelve `C:\Users\plaza\...`, y concatenar `"file:"` produce `file:C:\...` — URI inválida. Spring no puede resolverla y el `ResourceHandler` no sirve ningún archivo.
+
+**Solución:**
+
+```java
+String uri = Paths.get(uploadDir).toAbsolutePath().normalize().toUri().toString();
+// Produce: file:///C:/Users/plaza/.../uploads/
+if (!uri.endsWith("/")) uri += "/";
+registry.addResourceHandler("/uploads/**").addResourceLocations(uri);
+```
+
+`.toUri().toString()` genera `file:///C:/...` (URI RFC 3986 válida) en lugar de concatenar manualmente el prefijo.

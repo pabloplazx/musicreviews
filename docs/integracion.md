@@ -2103,3 +2103,199 @@ El JWT contiene `email` y `rol`, pero no `id` ni `username`. Para mostrar el use
 
 **¿Por qué el `error` en `services/auth.js` lanza `Error` en lugar de devolver un objeto?**
 Para que el componente que llama use `try/catch` (idiomático en JS async) en lugar de `if (result.error)`. También así se propaga limpiamente por la cadena `loginService → AuthContext.login → handleSubmit`.
+
+---
+
+## 12. Subida de foto de perfil — integración completa (24/05/2026)
+
+Implementación del endpoint de subida de imagen de perfil y la cadena de visualización extremo a extremo: selección de archivo en el navegador → subida al backend → almacenamiento en disco → servicio de archivos estáticos → display en todos los componentes que muestran avatar.
+
+---
+
+### Backend — endpoint y almacenamiento
+
+#### `POST /api/usuarios/{id}/foto`
+
+```
+Frontend → POST /api/usuarios/5/foto (multipart/form-data, campo "file")
+  ↓
+UsuarioController.subirFoto()
+  ├── Verifica que quien llama es el dueño (email del JWT == usuario.email) o ADMIN → 403 si no
+  ├── Verifica content-type: image/* → 400 si no es imagen
+  ├── Verifica tamaño ≤ 5 MB → 400 si supera
+  └── UsuarioService.guardarFotoPerfil(id, file)
+      ├── Crea directorio {uploadDir}/fotos/ si no existe
+      ├── Genera nombre único: {uuid}.{extension}
+      ├── Si el usuario tenía foto local anterior, la borra del disco
+      ├── Files.copy(file.getInputStream(), ruta, REPLACE_EXISTING)
+      └── JdbcTemplate.update("UPDATE usuario SET foto_perfil = ? WHERE id = ?", "/uploads/fotos/{nombre}")
+  ↓
+Responde: 200 { fotoPerfil: "/uploads/fotos/{nombre}" }
+```
+
+**`application.properties`:**
+```properties
+app.upload.dir=./uploads
+spring.servlet.multipart.max-file-size=5MB
+spring.servlet.multipart.max-request-size=5MB
+```
+
+**Por qué JdbcTemplate en lugar de `save()` de JPA:** mismo motivo que para el token de verificación — Hibernate puede ignorar el campo si la entidad cargada no marca el campo como dirty en el contexto de persistencia actual. El UPDATE directo via JDBC es determinista.
+
+#### `WebConfig.java` — servir archivos estáticos
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+    @Value("${app.upload.dir:./uploads}")
+    private String uploadDir;
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String uri = Paths.get(uploadDir).toAbsolutePath().normalize().toUri().toString();
+        if (!uri.endsWith("/")) uri += "/";
+        registry.addResourceHandler("/uploads/**").addResourceLocations(uri);
+    }
+}
+```
+
+Mapea `GET /uploads/**` a archivos en `{uploadDir}/`. En producción (Docker), `uploadDir` se inyecta como `APP_UPLOAD_DIR=/app/uploads` vía variable de entorno.
+
+**Por qué `.toUri().toString()` en lugar de `"file:" + path`:** en Windows, `Paths.get(...).toString()` devuelve `C:\Users\...`. Concatenar `"file:"` produce `file:C:\...`, URI inválida. `.toUri().toString()` produce siempre `file:///C:/...` (URI RFC 3986 válida).
+
+#### SecurityConfig — acceso público a `/uploads/**`
+
+Las peticiones de `<img src="...">` del navegador no incluyen cabecera `Authorization`. Si `/uploads/**` no se declara explícitamente como pública, `anyRequest().authenticated()` bloquea todas las imágenes con 403. Solución:
+
+```java
+.requestMatchers("/uploads/**").permitAll()
+// antes de .anyRequest().authenticated()
+```
+
+---
+
+### Frontend — selección y upload
+
+#### `EditarPerfil.jsx` — selector de archivo
+
+Reemplaza el input de texto de URL por un selector de archivo real:
+
+```jsx
+const inputFotoRef = useRef(null);
+const [archivoFoto, setArchivoFoto]   = useState(null);
+const [previewFoto, setPreviewFoto]   = useState(null);
+
+function handleSeleccionarFoto(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) { setError("Solo se permiten imágenes"); return; }
+  if (file.size > 5 * 1024 * 1024)    { setError("La imagen no puede superar los 5 MB"); return; }
+  setArchivoFoto(file);
+  setPreviewFoto(URL.createObjectURL(file)); // preview inmediato en navegador
+}
+
+async function handleGuardar() {
+  let fotoFinal = fotoPerfil;
+  if (archivoFoto) {
+    const resultado = await subirFotoPerfil(usuario.id, archivoFoto, token);
+    fotoFinal = resultado.fotoPerfil; // "/uploads/fotos/xxx.jpg"
+  }
+  await actualizarUsuario(usuario.id, { username, fotoPerfil: fotoFinal, bio }, token);
+  // previewFoto NO se limpia — el blob URL sigue válido en la sesión
+}
+```
+
+El avatar muestra `previewFoto` si está disponible (blob URL inmediato), o `resolveUploadUrl(fotoPerfil)` en caso contrario.
+
+#### `services/usuarios.js` — `subirFotoPerfil`
+
+```js
+export async function subirFotoPerfil(id, file, token) {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API}/usuarios/${id}/foto`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,   // sin Content-Type manual — el browser pone el boundary
+  });
+  if (!res.ok) throw new Error((await res.json()).mensaje ?? "Error al subir la foto");
+  return res.json();
+}
+```
+
+**Por qué no poner `Content-Type: multipart/form-data` manualmente:** si se pone el header manualmente, falta el `boundary=...` que el browser genera automáticamente. El servidor rechaza el multipart sin boundary. Dejando que el browser lo establezca solo, siempre incluye el boundary correcto.
+
+#### `utils/uploads.js` — resolución de URLs
+
+```js
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace("/api", "");
+
+export function resolveUploadUrl(url) {
+  if (!url) return null;
+  if (url.startsWith("/uploads/")) return `${API_BASE}${url}`;
+  return url;
+}
+```
+
+Convierte `/uploads/fotos/xxx.jpg` → `http://localhost:8080/uploads/fotos/xxx.jpg` (dev) o `https://zentimes.es/uploads/fotos/xxx.jpg` (prod), derivando el base URL desde `VITE_API_URL` ya disponible en todos los entornos.
+
+Aplicada en: `Navbar.jsx`, `ResenaCard.jsx`, `PerfilUsuario.jsx`, `Busqueda.jsx`, `DetalleAlbum.jsx`.
+
+#### `vite.config.js` — proxy para desarrollo
+
+```js
+server: {
+  proxy: { '/uploads': 'http://localhost:8080' }
+}
+```
+
+Sin este proxy, el dev server de Vite (`:5173`) devolvería 404 para `/uploads/...` porque esa carpeta no existe en el proyecto del frontend. El proxy reenvía transparentemente al backend Spring Boot en `:8080`.
+
+---
+
+### Docker — volumen persistente para uploads
+
+Se añadió un volumen nombrado al `docker-compose.yml` para que las fotos de perfil subidas sobrevivan a reinicios de contenedores:
+
+```yaml
+backend:
+  environment:
+    APP_UPLOAD_DIR: /app/uploads
+  volumes:
+    - uploads:/app/uploads
+
+volumes:
+  mysql_data:
+  uploads:         # ← nuevo
+```
+
+Sin el volumen, cada `docker compose down` borraría todas las fotos subidas por los usuarios. El volumen nombrado `uploads` tiene el mismo ciclo de vida que `mysql_data`: persiste salvo `docker compose down -v`.
+
+La variable de entorno `APP_UPLOAD_DIR=/app/uploads` inyecta el directorio correcto dentro del contenedor vía el relaxed binding de Spring Boot (`APP_UPLOAD_DIR` → `app.upload.dir`).
+
+**nginx (`nginx.conf`) — proxy para `/uploads/` en producción:**
+
+```nginx
+location /uploads/ {
+    proxy_pass         http://backend:8080/uploads/;
+    proxy_http_version 1.1;
+    proxy_set_header   Host $host;
+    proxy_cache_valid  200 30d;
+    add_header         Cache-Control "public, max-age=2592000";
+}
+```
+
+nginx hace de proxy para las imágenes, añadiendo caché de 30 días. Las fotos de perfil cambian raramente; la caché larga mejora el rendimiento percibido.
+
+---
+
+### Tabla de verificaciones
+
+| Acción | Resultado esperado |
+|---|---|
+| Click en avatar → seleccionar imagen válida | Preview inmediato en el avatar, nombre de archivo visible |
+| Seleccionar archivo > 5 MB | Mensaje de error, sin upload |
+| Seleccionar archivo no-imagen (PDF, etc.) | Mensaje de error, sin upload |
+| Guardar con archivo seleccionado | Foto aparece en Navbar, PerfilUsuario y ResenaCard sin recargar |
+| Recargar página tras guardar | Foto sigue visible (dato persistido en BD) |
+| Ver el perfil de otro usuario con foto | Foto visible sin estar logueado (`/uploads/**` es público) |

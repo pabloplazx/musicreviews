@@ -611,3 +611,181 @@ Brevo exige verificar el dominio o dirección del remitente antes de permitir el
 3. Actualizar `app.mail.from=musicreviews@outlook.es` en `application.properties`.
 
 Adicionalmente, Gmail aplicaba filtros SPF que silenciaban los emails enviados con un remitente `@gmail.com` a través de un servidor SMTP de terceros. Usar `musicreviews@outlook.es` como remitente evitó ese problema.
+
+---
+
+## Restablecimiento de contraseña por email (24/05/2026)
+
+### Motivación
+
+El sistema de autenticación permitía cambiar la contraseña solo estando logueado (editar perfil), pero no existía ningún mecanismo de recuperación cuando el usuario la olvidaba. El link "¿Olvidaste tu contraseña?" en el formulario de login apuntaba a `#` como placeholder. Se implementó el flujo completo de recuperación de contraseña por email, aprovechando la infraestructura de Brevo SMTP ya configurada para la verificación de email.
+
+---
+
+### Flujo completo
+
+```
+Usuario → POST /api/auth/forgot-password { email }
+  ↓
+UsuarioService.generarTokenReset(email)
+  ├── Busca el usuario por email
+  ├── Si no existe → NO lanza error (no revelar si el email está registrado)
+  ├── Genera token UUID y fecha de expiración (24 horas)
+  └── JdbcTemplate.update("UPDATE usuario SET token_restablecimiento = ?, fecha_expiracion_reset = ? WHERE id = ?")
+  ↓
+EmailService.enviarRestablecimiento(email, username, token)
+  └── envía HTML con botón → {app.url}/reset-password?token=<uuid>
+  ↓
+Responde siempre: 200 { "mensaje": "Si ese email está registrado, recibirás un correo en breve." }
+
+────────────────────────────────────────────────────
+
+Usuario → POST /api/auth/reset-password { token, nuevaPassword }
+  ↓
+UsuarioService.restablecerPassword(token, rawPassword)
+  ├── findByTokenRestablecimiento(token) → 400 si no existe
+  ├── if (fechaExpiracionReset.isBefore(now())) → 400 "Token expirado"
+  ├── if (passwordEncoder.matches(raw, stored)) → 400 "La nueva contraseña no puede ser igual a la actual"
+  ├── Codifica: passwordEncoder.encode(raw)
+  └── JdbcTemplate.update("UPDATE usuario SET password = ?, token_restablecimiento = NULL, fecha_expiracion_reset = NULL WHERE id = ?")
+  ↓
+Responde: 200 { "mensaje": "Contraseña actualizada correctamente." }
+```
+
+---
+
+### Archivos nuevos
+
+| Archivo | Contenido |
+|---|---|
+| `dto/ForgotPasswordRequest.java` | `@Email @NotBlank String email` |
+| `dto/ResetPasswordRequest.java` | `@NotBlank String token`, `@Pattern(...) String nuevaPassword` |
+| `src/pages/ForgotPassword.jsx` | Formulario de email con estado "enviado" |
+| `src/pages/ResetPassword.jsx` | Formulario de nueva contraseña con indicador de fortaleza |
+
+---
+
+### Cambios en archivos existentes
+
+| Archivo | Cambio |
+|---|---|
+| `model/Usuario.java` | +`tokenRestablecimiento` (String, @JsonIgnore), +`fechaExpiracionReset` (LocalDateTime, @JsonIgnore) |
+| `repository/UsuarioRepository.java` | +`findByTokenRestablecimiento(String)` |
+| `service/UsuarioService.java` | +`generarTokenReset(email)`, +`restablecerPassword(token, rawPassword)`, +`PasswordEncoder` inyectado |
+| `service/EmailService.java` | +`enviarRestablecimiento(email, username, token)` con template HTML dark glassmorphism |
+| `controller/AuthController.java` | +`POST /api/auth/forgot-password`, +`POST /api/auth/reset-password` |
+| `dto/RegisterRequest.java` | password actualizado de `@Size(min=6)` a `@Pattern(regexp="^(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$")` |
+| `services/auth.js` | +`forgotPassword(email)`, +`resetPassword(token, nuevaPassword)` |
+| `App.jsx` | +rutas `/forgot-password` y `/reset-password` |
+| `pages/Login.jsx` | link "¿Olvidaste tu contraseña?" actualizado de `#` a `/forgot-password` |
+
+---
+
+### Política de contraseñas seguras
+
+Con la implementación del flujo de reset se aprovechó para endurecer la política de contraseñas en toda la aplicación:
+
+**Backend:** `@Pattern(regexp="^(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,}$")` en `RegisterRequest` y `ResetPasswordRequest`. Requisitos:
+- Mínimo 8 caracteres
+- Al menos un dígito (0-9)
+- Al menos un carácter especial (cualquier no alfanumérico)
+
+**Frontend** (`ResetPassword.jsx` — indicador visual de fortaleza):
+
+```js
+const REGLAS = [
+  { label: "Mínimo 8 caracteres", test: (p) => p.length >= 8 },
+  { label: "Al menos un número", test: (p) => /\d/.test(p) },
+  { label: "Al menos un carácter especial", test: (p) => /[^a-zA-Z0-9]/.test(p) },
+];
+
+function nivelFortaleza(pwd) {
+  const n = REGLAS.filter((r) => r.test(pwd)).length;
+  if (n === 0) return null;
+  if (n === 1) return "débil";
+  if (n === 2) return "media";
+  return "fuerte";
+}
+```
+
+Barra de progreso (1/3 → 2/3 → 3/3) con colores `error` / `yellow-500` / `primary` según el nivel. Checklist de reglas con ✓/✗ que se actualiza al teclear.
+
+**Comprobación "misma contraseña":** antes de llamar al backend, `restablecerPassword` en el service comprueba `passwordEncoder.matches(rawPassword, usuario.getPassword())` y lanza `ReglaNegocioException` si coincide. Esta validación solo puede hacerse en el servidor porque el hash BCrypt no es determinista.
+
+---
+
+### Decisión de seguridad: respuesta invariante en forgot-password
+
+`POST /api/auth/forgot-password` siempre responde con el mismo mensaje independientemente de si el email existe en la BD. Si respondiera diferente ("email no encontrado" vs "email enviado"), un atacante podría enumerar los emails registrados enviando miles de peticiones. El único riesgo de la respuesta invariante es que el usuario no sepa inmediatamente si su email está registrado — se asume aceptable porque el email tiene que haberlo introducido él mismo al registrarse.
+
+A nivel de implementación: `generarTokenReset` captura el `Optional.empty()` y retorna sin hacer nada; `AuthController` envuelve todo en `try/catch` genérico para que cualquier excepción inesperada tampoco revele información.
+
+---
+
+### JdbcTemplate para el token de reset
+
+Se usó el mismo patrón JdbcTemplate que para `token_verificacion` (documentado en la sección anterior). La razón es idéntica: con `GenerationType.IDENTITY`, Hibernate no puede incluir el token en el `INSERT` porque el ID aún no existe cuando se construye la entidad. El UPDATE directo vía JDBC sortea el estado interno de Hibernate:
+
+```java
+jdbcTemplate.update(
+    "UPDATE usuario SET token_restablecimiento = ?, fecha_expiracion_reset = ? WHERE id = ?",
+    token, LocalDateTime.now().plusHours(24), userId
+);
+```
+
+---
+
+### Endpoints añadidos
+
+#### `POST /api/auth/forgot-password`
+
+**Body:**
+```json
+{ "email": "pablo@gmail.com" }
+```
+
+**Respuesta 200** (siempre, independientemente de si el email existe):
+```json
+{ "mensaje": "Si ese email está registrado, recibirás un correo en breve." }
+```
+
+---
+
+#### `POST /api/auth/reset-password`
+
+**Body:**
+```json
+{
+  "token": "uuid-del-token",
+  "nuevaPassword": "NuevaPass1!"
+}
+```
+
+**Respuesta 200:**
+```json
+{ "mensaje": "Contraseña actualizada correctamente." }
+```
+
+**Errores:**
+- `400` — token inválido o no encontrado
+- `400` — token expirado (> 24 horas)
+- `400` — nueva contraseña igual a la actual
+- `400` — contraseña no cumple el patrón de seguridad
+
+---
+
+### Bug: pantalla en blanco al teclear en ResetPassword
+
+**Síntoma:** la página `ResetPassword.jsx` quedaba en blanco en cuanto el usuario empezaba a escribir la nueva contraseña.
+
+**Causa:** el componente calculaba `const nivel = nivelFortaleza(nuevaPassword)` y luego renderizaba `{nuevaPassword && <div style={{ color: COLOR_NIVEL[nivel] }}>...}`. Cuando el usuario teclea el primer carácter, `nivelFortaleza` devuelve `null` si no se cumple ninguna regla. `COLOR_NIVEL[null]` devuelve `undefined` — no lanza excepción, pero el `style` recibe un valor inválido que en ciertos browsers causa que React desmonte el árbol completo.
+
+**Solución:** cambiar la condición de render a `{nivel && ...}` en lugar de `{nuevaPassword && ...}`. Si `nivel` es `null` (cero reglas cumplidas), el bloque simplemente no se renderiza.
+
+```jsx
+// ❌ Antes
+{nuevaPassword && <div style={{ color: COLOR_NIVEL[nivel] }}>...</div>}
+
+// ✅ Después
+{nivel && <div style={{ color: COLOR_NIVEL[nivel] }}>...</div>}
+```

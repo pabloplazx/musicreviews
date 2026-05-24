@@ -1,13 +1,16 @@
 package com.musicreviews.backend.controller;
 
 import com.musicreviews.backend.dto.UsuarioResumenDTO;
+import com.musicreviews.backend.exception.AccesoDenegadoException;
 import com.musicreviews.backend.exception.RecursoNoEncontradoException;
+import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.service.UsuarioService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -65,6 +68,35 @@ public class UsuarioController {
     public ResponseEntity<Usuario> cambiarActivo(@PathVariable Long id, @RequestBody Map<String, Boolean> body) {
         boolean activo = body.getOrDefault("activo", true);
         return ResponseEntity.ok(usuarioService.cambiarActivo(id, activo));
+    }
+
+    // POST /api/usuarios/{id}/foto → sube la foto de perfil. Solo el dueño o ADMIN.
+    // Acepta multipart/form-data con el campo "foto". Devuelve la URL relativa del archivo.
+    @PostMapping("/{id}/foto")
+    public ResponseEntity<Map<String, String>> subirFoto(
+            @PathVariable Long id,
+            @RequestParam("foto") MultipartFile file,
+            Authentication auth) {
+
+        Usuario usuario = usuarioService.obtenerPorId(id)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
+
+        if (!esAdmin(auth) && !usuario.getEmail().equals(auth.getName())) {
+            throw new AccesoDenegadoException("Solo puedes cambiar tu propia foto de perfil");
+        }
+        if (file.isEmpty()) {
+            throw new ReglaNegocioException("El archivo está vacío");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new ReglaNegocioException("Solo se permiten imágenes (JPG, PNG, WEBP)");
+        }
+        if (file.getSize() > 5L * 1024 * 1024) {
+            throw new ReglaNegocioException("La imagen no puede superar los 5 MB");
+        }
+
+        String urlFoto = usuarioService.guardarFotoPerfil(id, file);
+        return ResponseEntity.ok(Map.of("fotoPerfil", urlFoto));
     }
 
     // DELETE /api/usuarios/{id} → elimina un usuario. Solo el dueño o ADMIN.

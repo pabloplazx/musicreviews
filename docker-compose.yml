@@ -24,8 +24,11 @@ services:
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       LASTFM_API_KEY: ${LASTFM_API_KEY}
+      APP_UPLOAD_DIR: /app/uploads
     expose:
       - "8080"
+    volumes:
+      - uploads:/app/uploads
 
   # =====================================================
   # Frontend — React buildado por Vite, servido por nginx
@@ -50,3 +53,6 @@ services:
       - /var/www/certbot:/var/www/certbot:ro
     depends_on:
       - backend
+
+volumes:
+  uploads:
