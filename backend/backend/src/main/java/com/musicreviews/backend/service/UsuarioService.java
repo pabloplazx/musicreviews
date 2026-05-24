@@ -6,11 +6,17 @@ import com.musicreviews.backend.exception.ReglaNegocioException;
 import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +32,9 @@ public class UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final JdbcTemplate jdbcTemplate;
     private final PasswordEncoder passwordEncoder;
+
+    @Value("${app.upload.dir:./uploads}")
+    private String uploadDir;
 
     // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
     @Transactional(readOnly = true)
@@ -167,6 +176,37 @@ public class UsuarioService {
                 "UPDATE usuario SET password = ?, token_restablecimiento = NULL, fecha_expiracion_reset = NULL WHERE id = ?",
                 passwordEncoder.encode(nuevaPasswordRaw), usuario.getId()
         );
+    }
+
+    // Guarda la imagen en disco, borra la anterior si era local y actualiza foto_perfil en BD.
+    public String guardarFotoPerfil(Long id, MultipartFile file) {
+        try {
+            String extension = obtenerExtension(file.getOriginalFilename());
+            String nombreArchivo = id + "_" + UUID.randomUUID() + "." + extension;
+
+            Path dirFotos = Paths.get(uploadDir, "fotos");
+            Files.createDirectories(dirFotos);
+
+            // Borrar foto anterior si era un archivo local subido
+            Usuario usuario = usuarioRepository.findById(id).orElseThrow();
+            if (usuario.getFotoPerfil() != null && usuario.getFotoPerfil().startsWith("/uploads/fotos/")) {
+                String nombreAnterior = usuario.getFotoPerfil().substring("/uploads/fotos/".length());
+                Files.deleteIfExists(dirFotos.resolve(nombreAnterior));
+            }
+
+            Files.copy(file.getInputStream(), dirFotos.resolve(nombreArchivo));
+
+            String urlFoto = "/uploads/fotos/" + nombreArchivo;
+            jdbcTemplate.update("UPDATE usuario SET foto_perfil = ? WHERE id = ?", urlFoto, id);
+            return urlFoto;
+        } catch (IOException e) {
+            throw new RuntimeException("Error al guardar la imagen: " + e.getMessage());
+        }
+    }
+
+    private String obtenerExtension(String filename) {
+        if (filename == null || !filename.contains(".")) return "jpg";
+        return filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
     }
 
     @Transactional
