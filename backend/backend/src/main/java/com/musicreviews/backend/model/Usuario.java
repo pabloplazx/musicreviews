@@ -71,6 +71,16 @@ public class Usuario {
     @Column(name = "token_verificacion")
     private String tokenVerificacion;
 
+    // UUID temporal para restablecer la contraseña. Se borra al usarlo o al expirar.
+    @JsonIgnore
+    @Column(name = "token_restablecimiento")
+    private String tokenRestablecimiento;
+
+    // Fecha límite del token de restablecimiento. Caduca a los 30 minutos.
+    @JsonIgnore
+    @Column(name = "fecha_expiracion_reset")
+    private LocalDateTime fechaExpiracionReset;
+
     // Antes de guardar por primera vez, esto asigna la fecha de registro y el rol por defecto.
     @PrePersist
     public void prePersist() {

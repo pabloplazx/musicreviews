@@ -35,4 +35,7 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
     @Modifying(clearAutomatically = true)
     @Query(value = "UPDATE usuario SET token_verificacion = :token WHERE id = :id", nativeQuery = true)
     void setTokenVerificacion(@Param("id") Long id, @Param("token") String token);
+
+    // Busca un usuario por el token de restablecimiento de contraseña.
+    Optional<Usuario> findByTokenRestablecimiento(String tokenRestablecimiento);
 }

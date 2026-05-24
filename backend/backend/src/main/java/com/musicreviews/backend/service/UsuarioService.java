@@ -7,6 +7,7 @@ import com.musicreviews.backend.model.Usuario;
 import com.musicreviews.backend.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ public class UsuarioService {
     // final + @RequiredArgsConstructor reemplaza @Autowired. Los campos inmutables son más seguros y fáciles de testear.
     private final UsuarioRepository usuarioRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final PasswordEncoder passwordEncoder;
 
     // readOnly=true indica a Hibernate que no rastree cambios en esta consulta, mejorando el rendimiento.
     @Transactional(readOnly = true)
@@ -122,6 +124,49 @@ public class UsuarioService {
                 .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado"));
         usuario.setActivo(activo);
         return usuarioRepository.save(usuario);
+    }
+
+    // Genera un token UUID de reset, lo persiste vía JDBC puro y devuelve el token.
+    // Caduca en 30 minutos — tiempo suficiente sin dejar la ventana abierta.
+    @Transactional
+    public String generarTokenReset(String email) {
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new ReglaNegocioException("No existe ninguna cuenta con ese email"));
+
+        if (!usuario.isActivo()) {
+            throw new ReglaNegocioException("Esta cuenta está desactivada");
+        }
+
+        String token = UUID.randomUUID().toString();
+
+        jdbcTemplate.update(
+                "UPDATE usuario SET token_restablecimiento = ?, fecha_expiracion_reset = ? WHERE id = ?",
+                token, LocalDateTime.now().plusMinutes(30), usuario.getId()
+        );
+
+        return token;
+    }
+
+    // Valida el token, comprueba que la nueva contraseña es distinta y actualiza.
+    // Recibe la contraseña en crudo para poder comparar con el hash almacenado.
+    @Transactional
+    public void restablecerPassword(String token, String nuevaPasswordRaw) {
+        Usuario usuario = usuarioRepository.findByTokenRestablecimiento(token)
+                .orElseThrow(() -> new ReglaNegocioException("Enlace de restablecimiento inválido o ya utilizado"));
+
+        if (usuario.getFechaExpiracionReset() == null ||
+                LocalDateTime.now().isAfter(usuario.getFechaExpiracionReset())) {
+            throw new ReglaNegocioException("El enlace ha expirado. Solicita uno nuevo.");
+        }
+
+        if (passwordEncoder.matches(nuevaPasswordRaw, usuario.getPassword())) {
+            throw new ReglaNegocioException("La nueva contraseña no puede ser igual a la actual");
+        }
+
+        jdbcTemplate.update(
+                "UPDATE usuario SET password = ?, token_restablecimiento = NULL, fecha_expiracion_reset = NULL WHERE id = ?",
+                passwordEncoder.encode(nuevaPasswordRaw), usuario.getId()
+        );
     }
 
     @Transactional
